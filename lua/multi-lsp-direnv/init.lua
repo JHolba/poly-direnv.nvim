@@ -425,6 +425,51 @@ local function create_autocmds()
   })
 end
 
+--- Statusline component showing the active .envrc for the current buffer.
+---
+--- Returns a short string like "raw/.envrc" (the .envrc path relative to the
+--- nearest git root or home directory). Returns "" if no .envrc applies.
+---
+--- Usage with lualine:
+---   lualine_x = { function() return require("multi-lsp-direnv").statusline() end }
+---
+--- @return string
+function M.statusline()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local dir = buf_dir(bufnr)
+  if not dir then
+    return ""
+  end
+
+  local cached = cache.get_resolve(dir)
+  if not cached or not cached.envrc_path then
+    return ""
+  end
+
+  local envrc = cached.envrc_path
+  local display = envrc
+
+  -- Try to shorten relative to git root
+  local git_root = vim.fs.root(bufnr, ".git")
+  if git_root then
+    local prefix = git_root .. "/"
+    if display:sub(1, #prefix) == prefix then
+      display = display:sub(#prefix + 1)
+    end
+  else
+    -- Fall back to home-relative
+    local home = vim.env.HOME or ""
+    if home ~= "" then
+      local prefix = home .. "/"
+      if display:sub(1, #prefix) == prefix then
+        display = "~/" .. display:sub(#prefix + 1)
+      end
+    end
+  end
+
+  return display
+end
+
 --- Initialize the plugin.
 --- @param user_config? table
 function M.setup(user_config)

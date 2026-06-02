@@ -128,6 +128,44 @@ require("multi-lsp-direnv").setup({
 All options are optional. Calling `setup()` with no arguments uses the defaults
 shown above.
 
+## Statusline
+
+The plugin provides a `statusline()` function that returns the active `.envrc`
+path for the current buffer, shortened relative to the git root (or home
+directory). Returns `""` when no `.envrc` applies.
+
+### lualine
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_x = {
+      {
+        function()
+          return require("multi-lsp-direnv").statusline()
+        end,
+        cond = function()
+          return require("multi-lsp-direnv").statusline() ~= ""
+        end,
+        icon = "",
+      },
+      "encoding",
+      "fileformat",
+      "filetype",
+    },
+  },
+})
+```
+
+### Native statusline
+
+```lua
+vim.o.statusline = '%{%v:lua.require("multi-lsp-direnv").statusline()%} ...'
+```
+
+When editing a file under `packages/raw/`, the statusline shows
+`packages/raw/.envrc`. Files outside any `.envrc` scope show nothing.
+
 ## Commands
 
 | Command              | Description                                            |
