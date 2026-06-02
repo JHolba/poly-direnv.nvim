@@ -30,7 +30,6 @@
 {
   lib,
   config,
-  pkgs,
   ...
 }: let
   cfg = config.programs.nixvim.plugins.multi-lsp-direnv;
