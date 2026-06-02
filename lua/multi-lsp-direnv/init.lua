@@ -211,6 +211,14 @@ local function wrapped_lsp_start(config, opts)
     return original_lsp_start(config, opts)
   end
 
+  -- Fast path for :lsp restart -- the config already carries _direnv_envrc
+  -- and cmd_env from the previous client. Pass through synchronously so the
+  -- restart code gets a client_id back instead of nil.
+  if config._direnv_envrc then
+    opts.reuse_client = reuse_client_with_envrc
+    return original_lsp_start(config, opts)
+  end
+
   local bufnr = vim._resolve_bufnr(opts.bufnr)
   local dir = buf_dir(bufnr)
 
