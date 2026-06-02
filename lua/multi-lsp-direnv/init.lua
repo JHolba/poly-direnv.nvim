@@ -39,11 +39,11 @@ local is_setup = false
 --- Sentinel value for "no envrc found" so we can cache the absence.
 local NO_ENVRC = "__no_envrc__"
 
---- Pending LSP starts waiting for direnv resolution.
---- Key: a unique id, Value: { config, opts, bufnr, dir }
---- @type table<integer, { config: vim.lsp.ClientConfig, opts: table, bufnr: integer, dir: string }>
-local pending_starts = {}
-local pending_id = 0
+--- Set of envrc paths we have already notified about loading.
+--- Prevents duplicate "Loaded env" messages when multiple LSP servers
+--- start for the same buffer (e.g., ruff + ty both trigger for .py files).
+--- @type table<string, boolean>
+local notified_envrc = {}
 
 local function notify(msg, level)
   vim.notify(msg, level or vim.log.levels.INFO, { title = "multi-lsp-direnv" })
@@ -191,7 +191,8 @@ local function resolve_and_start(config, opts, bufnr, dir)
 
       cache.set_env(envrc_path, env)
 
-      if M.config.notifications.on_load then
+      if M.config.notifications.on_load and not notified_envrc[envrc_path] then
+        notified_envrc[envrc_path] = true
         notify("Loaded env from " .. envrc_path, vim.log.levels.INFO)
       end
 
@@ -299,8 +300,9 @@ local function create_commands()
         return
       end
 
-      -- Invalidate cache
+      -- Invalidate cache and allow re-notification
       cache.invalidate(envrc_path)
+      notified_envrc[envrc_path] = nil
 
       -- Stop all LSP clients tied to this envrc
       local clients = vim.lsp.get_clients()
@@ -407,6 +409,7 @@ local function create_commands()
 
   vim.api.nvim_create_user_command("DirenvLspInvalidate", function()
     cache.invalidate_all()
+    notified_envrc = {}
     notify("All direnv caches invalidated", vim.log.levels.INFO)
   end, { desc = "Invalidate all direnv-lsp caches" })
 end
