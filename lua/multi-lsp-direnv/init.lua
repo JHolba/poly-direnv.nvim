@@ -209,6 +209,21 @@ local function resolve_and_start(config, opts, bufnr, dir)
   end)
 end
 
+--- Synchronous LSP start with direnv tagging applied.
+--- @param config vim.lsp.ClientConfig
+--- @param opts table
+--- @param envrc string? The envrc path (nil means no envrc / default env)
+--- @param env table<string, string?>? Environment variables to inject
+--- @return integer?
+local function sync_start(config, opts, envrc, env)
+  config._direnv_envrc = envrc or NO_ENVRC
+  if env and next(env) then
+    config.cmd_env = env
+  end
+  opts.reuse_client = reuse_client_with_envrc
+  return original_lsp_start(config, opts)
+end
+
 --- The wrapper around vim.lsp.start that injects direnv environments.
 --- @param config vim.lsp.ClientConfig
 --- @param opts table?
@@ -241,30 +256,15 @@ local function wrapped_lsp_start(config, opts)
   if cached_resolve then
     local envrc_path = cached_resolve.envrc_path
 
-    if not envrc_path then
-      -- Cached: no .envrc here. Start with default env.
-      config._direnv_envrc = NO_ENVRC
-      opts.reuse_client = reuse_client_with_envrc
-      return original_lsp_start(config, opts)
-    end
-
-    if cached_resolve.allowed ~= 0 then
-      -- Cached: not allowed. Start with default env.
-      config._direnv_envrc = NO_ENVRC
-      opts.reuse_client = reuse_client_with_envrc
-      return original_lsp_start(config, opts)
+    if not envrc_path or cached_resolve.allowed ~= 0 then
+      -- Cached: no .envrc or not allowed. Start with default env.
+      return sync_start(config, opts, nil, nil)
     end
 
     -- Check env cache
     local cached_env = cache.get_env(envrc_path)
     if cached_env then
-      -- Full cache hit: synchronous start
-      config._direnv_envrc = envrc_path
-      if next(cached_env) then
-        config.cmd_env = cached_env
-      end
-      opts.reuse_client = reuse_client_with_envrc
-      return original_lsp_start(config, opts)
+      return sync_start(config, opts, envrc_path, cached_env)
     end
 
     -- Resolve is cached but env is not; need async export
@@ -471,7 +471,7 @@ function M.statusline()
     return ""
   end
 
-  local envrc = cached.envrc_path
+  local envrc = cached.envrc_path --[[@as string]]
   local display = envrc
 
   -- Try to shorten relative to git root

@@ -93,7 +93,7 @@ in {
     programs.nixvim = {
       extraPlugins = [cfg.package];
 
-      extraConfigLua = let
+      extraConfigLuaPre = let
         luaSettings = builtins.toJSON {
           inherit (cfg.settings) cache_ttl bin autoload;
           notifications = {

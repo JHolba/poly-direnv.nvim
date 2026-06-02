@@ -19,38 +19,20 @@ M.bin = "direnv"
 ---   envrc_path is nil if no .envrc was found. allowed is 0 (allowed),
 ---   1 (pending), or 2 (denied).
 function M.resolve(dir, callback)
+  local cb = vim.schedule_wrap(callback)
   vim.system(
     { M.bin, "status", "--json" },
     { text = true, cwd = dir },
     function(obj)
-      if obj.code ~= 0 then
-        vim.schedule(function()
-          callback(nil, nil)
-        end)
-        return
-      end
+      if obj.code ~= 0 then return cb(nil, nil) end
 
       local ok, status = pcall(vim.json.decode, obj.stdout)
-      if not ok or not status or not status.state then
-        vim.schedule(function()
-          callback(nil, nil)
-        end)
-        return
-      end
+      if not ok or not status or not status.state then return cb(nil, nil) end
 
-      if status.state.foundRC == vim.NIL or status.state.foundRC == nil then
-        vim.schedule(function()
-          callback(nil, nil)
-        end)
-        return
-      end
+      local found = status.state.foundRC
+      if found == vim.NIL or found == nil then return cb(nil, nil) end
 
-      local envrc_path = status.state.foundRC.path
-      local allowed = status.state.foundRC.allowed
-
-      vim.schedule(function()
-        callback(envrc_path, allowed)
-      end)
+      cb(found.path, found.allowed)
     end
   )
 end
@@ -64,49 +46,47 @@ end
 --- @param callback fun(env: table<string, string?>?) Called with the env diff table.
 ---   nil on error. Keys with JSON null values are mapped to vim.NIL.
 function M.export(envrc_path, callback)
-  local envrc_dir = vim.fs.dirname(envrc_path)
-
+  local cb = vim.schedule_wrap(callback)
   vim.system(
     { M.bin, "export", "json" },
-    { text = true, cwd = envrc_dir },
+    { text = true, cwd = vim.fs.dirname(envrc_path) },
     function(obj)
-      if obj.code ~= 0 then
-        vim.schedule(function()
-          callback(nil)
-        end)
-        return
-      end
+      if obj.code ~= 0 then return cb(nil) end
 
       local stdout = obj.stdout or ""
-      if stdout == "" then
-        -- No env changes (direnv outputs empty string when nothing changed)
-        vim.schedule(function()
-          callback({})
-        end)
-        return
-      end
+      if stdout == "" then return cb({}) end
 
       local ok, env = pcall(vim.json.decode, stdout)
-      if not ok or type(env) ~= "table" then
-        vim.schedule(function()
-          callback(nil)
-        end)
-        return
-      end
+      if not ok or type(env) ~= "table" then return cb(nil) end
 
       -- Normalize: convert vim.NIL to nil for unset vars, ensure string values
       local normalized = {}
       for key, value in pairs(env) do
-        if value == vim.NIL or value == nil then
-          normalized[key] = nil
-        else
+        if value ~= vim.NIL and value ~= nil then
           normalized[key] = type(value) == "string" and value or tostring(value)
         end
       end
 
-      vim.schedule(function()
-        callback(normalized)
-      end)
+      cb(normalized)
+    end
+  )
+end
+
+--- Run a direnv action (allow/deny) for the .envrc at the given path.
+--- @param action string The direnv subcommand ("allow" or "deny")
+--- @param envrc_path string Absolute path to the .envrc file
+--- @param callback fun(ok: boolean, err: string?)
+local function run_action(action, envrc_path, callback)
+  local cb = vim.schedule_wrap(callback)
+  vim.system(
+    { M.bin, action },
+    { text = true, cwd = vim.fs.dirname(envrc_path) },
+    function(obj)
+      if obj.code ~= 0 then
+        cb(false, obj.stderr or "unknown error")
+      else
+        cb(true, nil)
+      end
     end
   )
 end
@@ -114,43 +94,11 @@ end
 --- Allow the .envrc at the given path.
 --- @param envrc_path string Absolute path to the .envrc file
 --- @param callback fun(ok: boolean, err: string?)
-function M.allow(envrc_path, callback)
-  local envrc_dir = vim.fs.dirname(envrc_path)
-
-  vim.system(
-    { M.bin, "allow" },
-    { text = true, cwd = envrc_dir },
-    function(obj)
-      vim.schedule(function()
-        if obj.code ~= 0 then
-          callback(false, obj.stderr or "unknown error")
-        else
-          callback(true, nil)
-        end
-      end)
-    end
-  )
-end
+function M.allow(envrc_path, callback) run_action("allow", envrc_path, callback) end
 
 --- Deny the .envrc at the given path.
 --- @param envrc_path string Absolute path to the .envrc file
 --- @param callback fun(ok: boolean, err: string?)
-function M.deny(envrc_path, callback)
-  local envrc_dir = vim.fs.dirname(envrc_path)
-
-  vim.system(
-    { M.bin, "deny" },
-    { text = true, cwd = envrc_dir },
-    function(obj)
-      vim.schedule(function()
-        if obj.code ~= 0 then
-          callback(false, obj.stderr or "unknown error")
-        else
-          callback(true, nil)
-        end
-      end)
-    end
-  )
-end
+function M.deny(envrc_path, callback) run_action("deny", envrc_path, callback) end
 
 return M

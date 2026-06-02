@@ -128,21 +128,4 @@ function M.invalidate_all()
   resolve_stable = {}
 end
 
---- Return a snapshot of all cached envrc paths and their directories.
---- Used by :DirenvLspStatus.
---- @return table<string, string[]> envrc_path -> list of cached directories
-function M.snapshot()
-  local result = {}
-  for dir, entry in pairs(resolve_cache) do
-    if is_valid(entry) and entry.value and entry.value.envrc_path then
-      local path = entry.value.envrc_path
-      if not result[path] then
-        result[path] = {}
-      end
-      table.insert(result[path], dir)
-    end
-  end
-  return result
-end
-
 return M
