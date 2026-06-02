@@ -143,7 +143,13 @@ local function complete_lsp_start(config, opts, bufnr, envrc_path, env)
     local key = (config.name or "?") .. "\0" .. envrc_path
     if not notified_starts[key] then
       notified_starts[key] = true
-      notify((config.name or "LSP") .. " using " .. envrc_path, vim.log.levels.INFO)
+      local cwd = vim.uv.cwd() or ""
+      local display = envrc_path
+      local prefix = cwd .. "/"
+      if display:sub(1, #prefix) == prefix then
+        display = display:sub(#prefix + 1)
+      end
+      notify("Started " .. (config.name or "LSP") .. " for " .. display, vim.log.levels.INFO)
     end
   end
 
