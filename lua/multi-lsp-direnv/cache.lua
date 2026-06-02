@@ -17,6 +17,12 @@ local resolve_cache = {}
 --- @type table<string, multi_lsp_direnv.CacheEntry>
 local env_cache = {}
 
+--- Stable resolve map: dir -> { envrc_path, allowed }.
+--- Never TTL-evicted; only cleared by explicit invalidation.
+--- Used by the statusline so it doesn't flicker when the TTL cache expires.
+--- @type table<string, { envrc_path: string?, allowed: integer? }>
+local resolve_stable = {}
+
 --- @type integer Cache TTL in milliseconds
 local ttl = 30000
 
@@ -58,10 +64,22 @@ end
 --- @param envrc_path string?
 --- @param allowed integer?
 function M.set_resolve(dir, envrc_path, allowed)
+  local value = { envrc_path = envrc_path, allowed = allowed }
   resolve_cache[dir] = {
-    value = { envrc_path = envrc_path, allowed = allowed },
+    value = value,
     timestamp = now_ms(),
   }
+  -- Also store in the stable map (no TTL) for statusline use
+  resolve_stable[dir] = value
+end
+
+--- Get the stable (non-TTL) resolve result for a directory.
+--- This never expires on its own; only explicit invalidation clears it.
+--- Used by the statusline to avoid flickering.
+--- @param dir string
+--- @return { envrc_path: string?, allowed: integer? }?
+function M.get_resolve_stable(dir)
+  return resolve_stable[dir]
 end
 
 -- Env cache: envrc_path -> env table ----------------------------------------
@@ -98,6 +116,7 @@ function M.invalidate(envrc_path)
   for dir, entry in pairs(resolve_cache) do
     if entry.value and entry.value.envrc_path == envrc_path then
       resolve_cache[dir] = nil
+      resolve_stable[dir] = nil
     end
   end
 end
@@ -106,6 +125,7 @@ end
 function M.invalidate_all()
   resolve_cache = {}
   env_cache = {}
+  resolve_stable = {}
 end
 
 --- Return a snapshot of all cached envrc paths and their directories.

@@ -441,7 +441,9 @@ function M.statusline()
     return ""
   end
 
-  local cached = cache.get_resolve(dir)
+  -- Use the stable (non-TTL) cache so the statusline doesn't flicker
+  -- when the TTL cache expires between direnv re-checks.
+  local cached = cache.get_resolve_stable(dir)
   if not cached or not cached.envrc_path then
     return ""
   end
