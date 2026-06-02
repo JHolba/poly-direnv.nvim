@@ -1,0 +1,19 @@
+# Nix
+result
+result-*
+
+# Lua
+luac.out
+
+# direnv
+.direnv/
+
+# Editor
+*.swp
+*.swo
+*~
+.netrwhist
+
+# OS
+.DS_Store
+Thumbs.db
