@@ -1,14 +1,27 @@
 {
   description = "multi-lsp-direnv.nvim -- per-directory direnv environments for Neovim LSP servers";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs = {
     self,
     nixpkgs,
+    treefmt-nix,
   }: let
     systems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
     forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+    treefmtEval = forAllSystems (pkgs:
+      treefmt-nix.lib.evalModule pkgs {
+        projectRootFile = "flake.nix";
+        programs.alejandra.enable = true;
+        programs.stylua.enable = true;
+      });
   in {
     packages = forAllSystems (pkgs: {
       default = pkgs.vimUtils.buildVimPlugin {
@@ -19,16 +32,9 @@
     });
 
     checks = forAllSystems (pkgs: {
-      lua-format = pkgs.runCommand "check-lua-format" {} ''
-        ${pkgs.stylua}/bin/stylua --check ${self}/lua
-        touch $out
-      '';
+      formatting = treefmtEval.${pkgs.system}.config.build.check self;
       lua-lint = pkgs.runCommand "check-lua-lint" {} ''
         cd ${self} && ${pkgs.selene}/bin/selene --allow-warnings lua/
-        touch $out
-      '';
-      nix-format = pkgs.runCommand "check-nix-format" {} ''
-        ${pkgs.alejandra}/bin/alejandra --check ${self}
         touch $out
       '';
       nix-lint = pkgs.runCommand "check-nix-lint" {} ''
@@ -52,6 +58,8 @@
         ];
       };
     });
+
+    formatter = forAllSystems (pkgs: treefmtEval.${pkgs.system}.config.build.wrapper);
 
     overlays.default = final: _: {
       vimPlugins =
