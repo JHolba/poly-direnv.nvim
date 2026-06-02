@@ -327,10 +327,7 @@ local function create_commands()
       end
 
       if #stopped > 0 then
-        notify(
-          "Restarting: " .. table.concat(stopped, ", ") .. " (env: " .. envrc_path .. ")",
-          vim.log.levels.INFO
-        )
+        notify("Restarting: " .. table.concat(stopped, ", ") .. " (env: " .. envrc_path .. ")", vim.log.levels.INFO)
         -- Neovim's FileType autocmd will re-trigger vim.lsp.start for affected buffers
         vim.defer_fn(function()
           vim.cmd("doautoall FileType")
