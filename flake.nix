@@ -1,5 +1,5 @@
 {
-  description = "multi-lsp-direnv.nvim -- per-directory direnv environments for Neovim LSP servers";
+  description = "poly-direnv.nvim -- per-directory direnv environments for Neovim LSP servers";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -25,7 +25,7 @@
   in {
     packages = forAllSystems (pkgs: {
       default = pkgs.vimUtils.buildVimPlugin {
-        pname = "multi-lsp-direnv-nvim";
+        pname = "poly-direnv-nvim";
         version = "0.1.0";
         src = self;
       };
@@ -65,8 +65,8 @@
       vimPlugins =
         (final.vimPlugins or {})
         // {
-          multi-lsp-direnv-nvim = final.vimUtils.buildVimPlugin {
-            pname = "multi-lsp-direnv-nvim";
+          poly-direnv-nvim = final.vimUtils.buildVimPlugin {
+            pname = "poly-direnv-nvim";
             version = "0.1.0";
             src = self;
           };

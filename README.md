@@ -1,4 +1,4 @@
-# multi-lsp-direnv.nvim
+# poly-direnv.nvim
 
 Neovim plugin that gives each LSP server the correct
 [direnv](https://direnv.net/) environment based on which `.envrc` scope the
@@ -19,7 +19,7 @@ environment happened to be active first.
 
 ## Solution
 
-`multi-lsp-direnv.nvim` wraps `vim.lsp.start()` to:
+`poly-direnv.nvim` wraps `vim.lsp.start()` to:
 
 1. Find the closest `.envrc` for the buffer's directory (`direnv status --json`).
 2. Export the environment for that `.envrc` (`direnv export json`).
@@ -45,9 +45,9 @@ other in-process features work immediately regardless.
 
 ```lua
 {
-  "your-user/multi-lsp-direnv.nvim",
+  "your-user/poly-direnv.nvim",
   config = function()
-    require("multi-lsp-direnv").setup()
+    require("poly-direnv").setup()
   end,
 }
 ```
@@ -58,8 +58,8 @@ Add the plugin as a flake input:
 
 ```nix
 # flake.nix
-inputs.multi-lsp-direnv = {
-  url = "github:your-user/multi-lsp-direnv.nvim";
+inputs.poly-direnv = {
+  url = "github:your-user/poly-direnv.nvim";
   flake = false;
 };
 ```
@@ -68,19 +68,19 @@ Then in your nixvim plugin file:
 
 ```nix
 { pkgs, inputs, ... }: let
-  multi-lsp-direnv-nvim = pkgs.vimUtils.buildVimPlugin {
-    pname = "multi-lsp-direnv-nvim";
+  poly-direnv-nvim = pkgs.vimUtils.buildVimPlugin {
+    pname = "poly-direnv-nvim";
     version = "0.1.0";
-    src = inputs.multi-lsp-direnv;
+    src = inputs.poly-direnv;
   };
 in {
   programs.nixvim = {
-    extraPlugins = [ multi-lsp-direnv-nvim ];
+    extraPlugins = [ poly-direnv-nvim ];
 
     # Must be extraConfigLuaPre so the wrapper is in place
     # before vim.lsp.enable() registers FileType autocmds.
     extraConfigLuaPre = ''
-      require("multi-lsp-direnv").setup()
+      require("poly-direnv").setup()
     '';
   };
 }
@@ -93,19 +93,19 @@ setup with typed options. See the file for usage instructions.
 
 ```nix
 # flake.nix
-inputs.multi-lsp-direnv.url = "github:your-user/multi-lsp-direnv.nvim";
+inputs.poly-direnv.url = "github:your-user/poly-direnv.nvim";
 
 # In your nixos/home-manager config:
-nixpkgs.overlays = [ inputs.multi-lsp-direnv.overlays.default ];
+nixpkgs.overlays = [ inputs.poly-direnv.overlays.default ];
 
 # Then use:
-pkgs.vimPlugins.multi-lsp-direnv-nvim
+pkgs.vimPlugins.poly-direnv-nvim
 ```
 
 ## Configuration
 
 ```lua
-require("multi-lsp-direnv").setup({
+require("poly-direnv").setup({
   -- How long to cache direnv export results (ms).
   cache_ttl = 30000,
 
@@ -142,10 +142,10 @@ require("lualine").setup({
     lualine_x = {
       {
         function()
-          return require("multi-lsp-direnv").statusline()
+          return require("poly-direnv").statusline()
         end,
         cond = function()
-          return require("multi-lsp-direnv").statusline() ~= ""
+          return require("poly-direnv").statusline() ~= ""
         end,
         icon = "",
       },
@@ -160,7 +160,7 @@ require("lualine").setup({
 ### Native statusline
 
 ```lua
-vim.o.statusline = '%{%v:lua.require("multi-lsp-direnv").statusline()%} ...'
+vim.o.statusline = '%{%v:lua.require("poly-direnv").statusline()%} ...'
 ```
 
 When editing a file under `packages/raw/`, the statusline shows
@@ -170,11 +170,11 @@ When editing a file under `packages/raw/`, the statusline shows
 
 | Command              | Description                                            |
 |----------------------|--------------------------------------------------------|
-| `:DirenvLspStatus`   | Show running LSP servers grouped by `.envrc` scope     |
-| `:DirenvLspRestart`  | Invalidate cache and restart servers for current scope |
-| `:DirenvLspAllow`    | Run `direnv allow` for the current buffer's `.envrc`   |
-| `:DirenvLspDeny`     | Run `direnv deny` for the current buffer's `.envrc`    |
-| `:DirenvLspInvalidate` | Clear all cached environments                        |
+| `:PolyDirenvStatus`   | Show running LSP servers grouped by `.envrc` scope     |
+| `:PolyDirenvRestart`  | Invalidate cache and restart servers for current scope |
+| `:PolyDirenvAllow`    | Run `direnv allow` for the current buffer's `.envrc`   |
+| `:PolyDirenvDeny`     | Run `direnv deny` for the current buffer's `.envrc`    |
+| `:PolyDirenvInvalidate` | Clear all cached environments                        |
 
 ## Example
 
@@ -200,10 +200,10 @@ Opening `__main__.py` from both packages in the same Neovim session:
 - `ruff` for `packages/bronze/` starts with the `bronze` devShell's `PYTHONPATH`
 - Each server sees the correct dependencies for its package
 
-Running `:DirenvLspStatus` shows:
+Running `:PolyDirenvStatus` shows:
 
 ```
-multi-lsp-direnv: LSP Server Status
+poly-direnv: LSP Server Status
 
   /home/user/aurora/packages/raw/.envrc:
     ruff (id=1)
@@ -244,7 +244,7 @@ On cache hit, steps 3-4 are skipped and the start is synchronous.
   this API is unavailable.
 - **`.envrc` must be allowed.** If the `.envrc` hasn't been approved via
   `direnv allow`, the plugin warns and starts the LSP with Neovim's default
-  environment. Use `:DirenvLspAllow` to approve it.
+  environment. Use `:PolyDirenvAllow` to approve it.
 
 ## License
 

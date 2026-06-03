@@ -7,14 +7,14 @@
 
 local M = {}
 
---- @class multi_lsp_direnv.CacheEntry
+--- @class poly_direnv.CacheEntry
 --- @field value any
 --- @field timestamp integer ms timestamp from vim.uv.hrtime
 
---- @type table<string, multi_lsp_direnv.CacheEntry>
+--- @type table<string, poly_direnv.CacheEntry>
 local resolve_cache = {}
 
---- @type table<string, multi_lsp_direnv.CacheEntry>
+--- @type table<string, poly_direnv.CacheEntry>
 local env_cache = {}
 
 --- Stable resolve map: dir -> { envrc_path, allowed }.
@@ -30,7 +30,7 @@ local function now_ms()
   return math.floor(vim.uv.hrtime() / 1000000)
 end
 
---- @param entry multi_lsp_direnv.CacheEntry?
+--- @param entry poly_direnv.CacheEntry?
 --- @return boolean
 local function is_valid(entry)
   if not entry then

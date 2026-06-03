@@ -1,4 +1,4 @@
---- multi-lsp-direnv.nvim
+--- poly-direnv.nvim
 ---
 --- Automatically provides per-directory direnv environments to LSP servers.
 --- Each LSP server process is keyed by (name, envrc_path), so files under
@@ -8,18 +8,18 @@
 --- Works by wrapping vim.lsp.start() to inject cmd_env and override the
 --- reuse_client predicate before the server process is spawned.
 
-local cache = require("multi-lsp-direnv.cache")
-local direnv = require("multi-lsp-direnv.direnv")
+local cache = require("poly-direnv.cache")
+local direnv = require("poly-direnv.direnv")
 
 local M = {}
 
---- @class multi_lsp_direnv.Config
+--- @class poly_direnv.Config
 --- @field cache_ttl integer Cache TTL in milliseconds (default 30000)
 --- @field bin string Path to direnv binary (default "direnv")
 --- @field autoload boolean Automatically inject env on LSP start (default true)
 --- @field notifications { on_load: boolean, on_envrc_change: boolean }
 
---- @type multi_lsp_direnv.Config
+--- @type poly_direnv.Config
 M.config = {
   cache_ttl = 30000,
   bin = "direnv",
@@ -45,7 +45,7 @@ local NO_ENVRC = "__no_envrc__"
 local notified_starts = {}
 
 local function notify(msg, level)
-  vim.notify(msg, level or vim.log.levels.INFO, { title = "multi-lsp-direnv" })
+  vim.notify(msg, level or vim.log.levels.INFO, { title = "poly-direnv" })
 end
 
 --- Get the directory for a buffer's file.
@@ -178,7 +178,7 @@ local function resolve_and_start(config, opts, bufnr, dir)
       -- Not allowed
       local status_text = allowed == 1 and "pending approval" or "denied"
       notify(
-        envrc_path .. " is " .. status_text .. ". LSP starting with default env. Run :DirenvLspAllow to allow.",
+        envrc_path .. " is " .. status_text .. ". LSP starting with default env. Run :PolyDirenvAllow to allow.",
         vim.log.levels.WARN
       )
       complete_lsp_start(config, opts, bufnr, nil, nil)
@@ -301,7 +301,7 @@ end
 
 --- Create user commands.
 local function create_commands()
-  vim.api.nvim_create_user_command("DirenvLspRestart", function()
+  vim.api.nvim_create_user_command("PolyDirenvRestart", function()
     get_current_envrc(function(envrc_path, _)
       if not envrc_path then
         notify("No .envrc found for current buffer", vim.log.levels.WARN)
@@ -338,9 +338,9 @@ local function create_commands()
     end)
   end, { desc = "Restart LSP servers for current buffer's .envrc" })
 
-  vim.api.nvim_create_user_command("DirenvLspStatus", function()
+  vim.api.nvim_create_user_command("PolyDirenvStatus", function()
     local clients = vim.lsp.get_clients()
-    local lines = { "multi-lsp-direnv: LSP Server Status", "" }
+    local lines = { "poly-direnv: LSP Server Status", "" }
 
     local by_envrc = {}
     local no_envrc = {}
@@ -378,7 +378,7 @@ local function create_commands()
     notify(table.concat(lines, "\n"), vim.log.levels.INFO)
   end, { desc = "Show LSP servers grouped by .envrc" })
 
-  vim.api.nvim_create_user_command("DirenvLspAllow", function()
+  vim.api.nvim_create_user_command("PolyDirenvAllow", function()
     get_current_envrc(function(envrc_path, _)
       if not envrc_path then
         notify("No .envrc found for current buffer", vim.log.levels.WARN)
@@ -392,12 +392,12 @@ local function create_commands()
         end
 
         cache.invalidate(envrc_path)
-        notify("Allowed " .. envrc_path .. ". Run :DirenvLspRestart to reload.", vim.log.levels.INFO)
+        notify("Allowed " .. envrc_path .. ". Run :PolyDirenvRestart to reload.", vim.log.levels.INFO)
       end)
     end)
   end, { desc = "Allow the .envrc for current buffer" })
 
-  vim.api.nvim_create_user_command("DirenvLspDeny", function()
+  vim.api.nvim_create_user_command("PolyDirenvDeny", function()
     get_current_envrc(function(envrc_path, _)
       if not envrc_path then
         notify("No .envrc found for current buffer", vim.log.levels.WARN)
@@ -416,16 +416,16 @@ local function create_commands()
     end)
   end, { desc = "Deny the .envrc for current buffer" })
 
-  vim.api.nvim_create_user_command("DirenvLspInvalidate", function()
+  vim.api.nvim_create_user_command("PolyDirenvInvalidate", function()
     cache.invalidate_all()
     notified_starts = {}
     notify("All direnv caches invalidated", vim.log.levels.INFO)
-  end, { desc = "Invalidate all direnv-lsp caches" })
+  end, { desc = "Invalidate all poly-direnv caches" })
 end
 
 --- Create autocmds for .envrc change detection.
 local function create_autocmds()
-  local group = vim.api.nvim_create_augroup("MultiLspDirenv", { clear = true })
+  local group = vim.api.nvim_create_augroup("PolyDirenv", { clear = true })
 
   vim.api.nvim_create_autocmd("BufWritePost", {
     group = group,
@@ -439,7 +439,7 @@ local function create_autocmds()
       cache.invalidate(envrc_path)
 
       if M.config.notifications.on_envrc_change then
-        notify(envrc_path .. " changed. Run :DirenvLspAllow then :DirenvLspRestart to reload.", vim.log.levels.INFO)
+        notify(envrc_path .. " changed. Run :PolyDirenvAllow then :PolyDirenvRestart to reload.", vim.log.levels.INFO)
       end
     end,
   })
@@ -451,7 +451,7 @@ end
 --- nearest git root or home directory). Returns "" if no .envrc applies.
 ---
 --- Usage with lualine:
----   lualine_x = { function() return require("multi-lsp-direnv").statusline() end }
+---   lualine_x = { function() return require("poly-direnv").statusline() end }
 ---
 --- @return string
 function M.statusline()

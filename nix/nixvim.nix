@@ -1,26 +1,26 @@
-# Nixvim module for multi-lsp-direnv.nvim
+# Nixvim module for poly-direnv.nvim
 #
 # Usage in a nixvim config:
 #
 #   # In your flake inputs:
-#   multi-lsp-direnv = {
-#     url = "github:<owner>/multi-lsp-direnv.nvim";
+#   poly-direnv = {
+#     url = "github:<owner>/poly-direnv.nvim";
 #     flake = false;
 #   };
 #
 #   # In your nixvim plugin file:
 #   { pkgs, inputs, ... }:
 #   let
-#     multi-lsp-direnv-nvim = pkgs.vimUtils.buildVimPlugin {
-#       pname = "multi-lsp-direnv-nvim";
+#     poly-direnv-nvim = pkgs.vimUtils.buildVimPlugin {
+#       pname = "poly-direnv-nvim";
 #       version = "0.1.0";
-#       src = inputs.multi-lsp-direnv;
+#       src = inputs.poly-direnv;
 #     };
 #   in {
-#     imports = [ "${inputs.multi-lsp-direnv}/nix/nixvim.nix" ];
-#     programs.nixvim.plugins.multi-lsp-direnv = {
+#     imports = [ "${inputs.poly-direnv}/nix/nixvim.nix" ];
+#     programs.nixvim.plugins.poly-direnv = {
 #       enable = true;
-#       package = multi-lsp-direnv-nvim;
+#       package = poly-direnv-nvim;
 #       settings = {
 #         cache_ttl = 30000;
 #         autoload = true;
@@ -32,14 +32,14 @@
   config,
   ...
 }: let
-  cfg = config.programs.nixvim.plugins.multi-lsp-direnv;
+  cfg = config.programs.nixvim.plugins.poly-direnv;
 in {
-  options.programs.nixvim.plugins.multi-lsp-direnv = {
-    enable = lib.mkEnableOption "multi-lsp-direnv.nvim -- per-directory direnv environments for LSP servers";
+  options.programs.nixvim.plugins.poly-direnv = {
+    enable = lib.mkEnableOption "poly-direnv.nvim -- per-directory direnv environments for LSP servers";
 
     package = lib.mkOption {
       type = lib.types.package;
-      description = "The multi-lsp-direnv.nvim plugin package.";
+      description = "The poly-direnv.nvim plugin package.";
     };
 
     settings = lib.mkOption {
@@ -84,7 +84,7 @@ in {
         };
       };
       default = {};
-      description = "Plugin settings passed to require('multi-lsp-direnv').setup().";
+      description = "Plugin settings passed to require('poly-direnv').setup().";
     };
   };
 
@@ -100,7 +100,7 @@ in {
           };
         };
       in ''
-        require("multi-lsp-direnv").setup(vim.json.decode([[${luaSettings}]]))
+        require("poly-direnv").setup(vim.json.decode([[${luaSettings}]]))
       '';
     };
   };
