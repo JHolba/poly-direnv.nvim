@@ -59,42 +59,6 @@ local function buf_dir(bufnr)
   return vim.fs.dirname(fname)
 end
 
---- Workspace folder check that mirrors neovim's default reuse logic.
---- Uses vim.lsp._get_workspace_folders if available, falls back to
---- a simple root_dir comparison.
---- @param client vim.lsp.Client
---- @param config vim.lsp.ClientConfig
---- @return boolean
-local function workspace_match(client, config)
-  local get_ws = vim.lsp._get_workspace_folders
-  if not get_ws then
-    -- Fallback: compare root_dir directly
-    return (client.config.root_dir or "") == (config.root_dir or "")
-  end
-
-  local config_folders = get_ws(config.workspace_folders or config.root_dir)
-
-  if not config_folders or not next(config_folders) then
-    local client_config_folders = get_ws(client.config.workspace_folders or client.config.root_dir)
-    return not client_config_folders or not next(client_config_folders)
-  end
-
-  for _, config_folder in ipairs(config_folders) do
-    local found = false
-    for _, client_folder in ipairs(client.workspace_folders or {}) do
-      if config_folder.uri == client_folder.uri then
-        found = true
-        break
-      end
-    end
-    if not found then
-      return false
-    end
-  end
-
-  return true
-end
-
 --- Reuse predicate that also checks envrc path.
 --- Two servers with the same name but different .envrc scopes must NOT reuse.
 --- @param client vim.lsp.Client
@@ -112,7 +76,8 @@ local function reuse_client_with_envrc(client, config)
     return false
   end
 
-  return workspace_match(client, config)
+  -- Compare root_dir directly (mirrors Neovim 0.12 default reuse logic)
+  return (client.config.root_dir or "") == (config.root_dir or "")
 end
 
 --- Complete the deferred LSP start with the resolved environment.
@@ -243,7 +208,7 @@ local function wrapped_lsp_start(config, opts)
     return original_lsp_start(config, opts)
   end
 
-  local bufnr = vim._resolve_bufnr(opts.bufnr)
+  local bufnr = (opts.bufnr == nil or opts.bufnr == 0) and vim.api.nvim_get_current_buf() or opts.bufnr
   local dir = buf_dir(bufnr)
 
   if not dir then
