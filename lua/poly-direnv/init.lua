@@ -7,6 +7,8 @@
 ---
 --- Works by wrapping vim.lsp.start() to inject cmd_env and override the
 --- reuse_client predicate before the server process is spawned.
+---
+--- Requires Neovim >= 0.12.
 
 local cache = require("poly-direnv.cache")
 local direnv = require("poly-direnv.direnv")
@@ -59,6 +61,38 @@ local function buf_dir(bufnr)
   return vim.fs.dirname(fname)
 end
 
+--- Shorten a path for display by trying bases in order.
+---
+--- Each entry in `bases` is a literal: "cwd", "git", or "home".
+--- The first base that is an ancestor of `path` wins.
+--- "home"-relative paths are prefixed with "~/".
+---
+--- @param path string Absolute path to shorten
+--- @param bases ("cwd"|"git"|"home")[] Bases to try, in order
+--- @param bufnr? integer Buffer number (needed for "git")
+--- @return string
+local function display_path(path, bases, bufnr)
+  for _, base in ipairs(bases) do
+    local dir
+    if base == "cwd" then
+      dir = vim.uv.cwd()
+    elseif base == "git" then
+      dir = bufnr and vim.fs.root(bufnr, ".git")
+    elseif base == "home" then
+      dir = vim.env.HOME
+    end
+
+    if dir and dir ~= "" then
+      local rel = vim.fs.relpath(dir, path)
+      if rel then
+        return base == "home" and ("~/" .. rel) or rel
+      end
+    end
+  end
+
+  return path
+end
+
 --- Reuse predicate that also checks envrc path.
 --- Two servers with the same name but different .envrc scopes must NOT reuse.
 --- @param client vim.lsp.Client
@@ -108,13 +142,10 @@ local function complete_lsp_start(config, opts, bufnr, envrc_path, env)
     local key = (config.name or "?") .. "\0" .. envrc_path
     if not notified_starts[key] then
       notified_starts[key] = true
-      local cwd = vim.uv.cwd() or ""
-      local display = envrc_path
-      local prefix = cwd .. "/"
-      if display:sub(1, #prefix) == prefix then
-        display = display:sub(#prefix + 1)
-      end
-      notify("Started " .. (config.name or "LSP") .. " for " .. display, vim.log.levels.INFO)
+      notify(
+        "Started " .. (config.name or "LSP") .. " for " .. display_path(envrc_path, { "cwd", "git", "home" }, bufnr),
+        vim.log.levels.INFO
+      )
     end
   end
 
@@ -433,28 +464,8 @@ function M.statusline()
     return ""
   end
 
-  local envrc = cached.envrc_path --[[@as string]]
-  local display = envrc
-
-  -- Try to shorten relative to git root
-  local git_root = vim.fs.root(bufnr, ".git")
-  if git_root then
-    local prefix = git_root .. "/"
-    if display:sub(1, #prefix) == prefix then
-      display = display:sub(#prefix + 1)
-    end
-  else
-    -- Fall back to home-relative
-    local home = vim.env.HOME or ""
-    if home ~= "" then
-      local prefix = home .. "/"
-      if display:sub(1, #prefix) == prefix then
-        display = "~/" .. display:sub(#prefix + 1)
-      end
-    end
-  end
-
-  return display
+  -- Use git root (not cwd) so the statusline stays stable when cwd changes.
+  return display_path(cached.envrc_path, { "git", "home" }, bufnr)
 end
 
 --- Initialize the plugin.
@@ -476,7 +487,9 @@ function M.setup(user_config)
     return
   end
 
-  -- Monkey-patch vim.lsp.start
+  -- Wrap vim.lsp.start to inject direnv environments and override reuse_client.
+  -- This intercept point works regardless of whether users configure LSP via
+  -- vim.lsp.config()/vim.lsp.enable() or call vim.lsp.start() directly.
   original_lsp_start = vim.lsp.start
   vim.lsp.start = wrapped_lsp_start
 

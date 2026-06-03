@@ -36,7 +36,7 @@ other in-process features work immediately regardless.
 
 ## Requirements
 
-- Neovim >= 0.10
+- Neovim >= 0.12
 - [direnv](https://direnv.net/) >= 2.33.0 (needs `direnv status --json`)
 
 ## Installation
@@ -239,9 +239,6 @@ On cache hit, steps 3-4 are skipped and the start is synchronous.
   spawn time via `cmd_env`. The global Neovim process environment (`vim.env`)
   is not modified. Shell commands (`:!make`, toggleterm) inherit Neovim's
   process env, not the direnv-scoped env.
-- **Uses `vim.lsp._get_workspace_folders`** (a private Neovim API) for the
-  workspace folder reuse check. A fallback to `root_dir` comparison is used if
-  this API is unavailable.
 - **`.envrc` must be allowed.** If the `.envrc` hasn't been approved via
   `direnv allow`, the plugin warns and starts the LSP with Neovim's default
   environment. Use `:PolyDirenvAllow` to approve it.

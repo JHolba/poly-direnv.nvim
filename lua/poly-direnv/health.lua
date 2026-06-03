@@ -23,10 +23,10 @@ function M.check()
   local nvim_version = vim.version()
   local nvim_str = ("%d.%d.%d"):format(nvim_version.major, nvim_version.minor, nvim_version.patch)
 
-  if nvim_version.major > 0 or (nvim_version.major == 0 and nvim_version.minor >= 10) then
-    health.ok("Neovim >= 0.10 (" .. nvim_str .. ")")
+  if nvim_version.major > 0 or (nvim_version.major == 0 and nvim_version.minor >= 12) then
+    health.ok("Neovim >= 0.12 (" .. nvim_str .. ")")
   else
-    health.error("Neovim >= 0.10 required, found " .. nvim_str)
+    health.error("Neovim >= 0.12 required, found " .. nvim_str)
   end
 
   -- 2. direnv binary ------------------------------------------------------------
@@ -63,12 +63,6 @@ function M.check()
   -- 3. Plugin setup state -------------------------------------------------------
   health.start("Plugin status")
 
-  -- Check if setup() has been called by looking at whether vim.lsp.start is wrapped
-  local lsp_wrapped = vim.lsp.start ~= nil and type(vim.lsp.start) == "function"
-  -- We can detect the wrapper by checking if the original was saved.
-  -- The simplest reliable check: see if the module recorded is_setup.
-  -- is_setup is local so we check indirectly: original_lsp_start is set during setup().
-  -- Another approach: check if user commands exist.
   local has_commands = vim.fn.exists(":PolyDirenvStatus") == 2
 
   if has_commands then
@@ -92,7 +86,21 @@ function M.check()
     health.warn("autoload is disabled -- LSP servers will not automatically receive direnv environments")
   end
 
-  -- 5. Active LSP clients -------------------------------------------------------
+  -- 5. Enabled LSP configs ------------------------------------------------------
+  health.start("LSP configs")
+
+  local configs = vim.lsp.get_configs()
+  if #configs == 0 then
+    health.info("No LSP configs registered")
+  else
+    for _, cfg in ipairs(configs) do
+      local name = cfg.name or "?"
+      local enabled = vim.lsp.is_enabled(name)
+      health.info(name .. ": " .. (enabled and "enabled" or "disabled"))
+    end
+  end
+
+  -- 6. Active LSP clients -------------------------------------------------------
   health.start("LSP clients")
 
   local clients = vim.lsp.get_clients()
