@@ -20,6 +20,7 @@ local modules = {
   "poly-direnv.cache",
   "poly-direnv.direnv",
   "poly-direnv.health",
+  "poly-direnv.neotest",
   "poly-direnv.types",
 }
 for _, mod in ipairs(modules) do

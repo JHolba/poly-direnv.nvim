@@ -275,58 +275,56 @@ local envrc_path, env = require("poly-direnv").get_env_wait("/path/to/project")
 Use this when the cache may not be warm (e.g. when a test runner triggers
 before any LSP server has started for that directory).
 
-### Example: neotest
+### Neotest integration
 
-[neotest](https://github.com/nvim-neotest/neotest) provides a `run.augment`
-hook that fires before every test run. Use `get_env_wait` to inject the direnv
-environment into test processes:
+The `poly-direnv.neotest` module provides ready-made configuration for
+[neotest](https://github.com/nvim-neotest/neotest). It handles:
+
+- Resolving the correct Python binary from the direnv `PATH`
+- Injecting direnv environment variables into test processes
+- Setting `cwd` to the `.envrc` parent directory
+- Forcing `pytest` as the runner (bypasses module detection that fails
+  outside the direnv environment)
+
+```lua
+local poly_neotest = require("poly-direnv.neotest")
+
+require("neotest").setup({
+  adapters = {
+    require("neotest-python")(poly_neotest.python()),
+  },
+  run = poly_neotest.run(),
+})
+```
+
+Both `python()` and `run()` accept an optional table to merge additional
+settings:
 
 ```lua
 require("neotest").setup({
   adapters = {
-    require("neotest-python")({
-      -- Resolve python from the direnv PATH so the correct
-      -- interpreter (with project dependencies) is used.
-      python = function(root)
-        local envrc, env = require("poly-direnv").get_env_wait(root)
-        if env and env.PATH then
-          for dir in env.PATH:gmatch("[^:]+") do
-            local py = dir .. "/python3"
-            if vim.uv.fs_stat(py) then
-              return py
-            end
-          end
-        end
-        return "python3"
-      end,
-    }),
+    require("neotest-python")(poly_neotest.python({
+      dap = { justMyCode = false },
+    })),
   },
-  run = {
-    augment = function(tree, args)
-      local position = tree:data()
-      if not position or not position.path then
-        return args
-      end
-
-      local envrc, env = require("poly-direnv").get_env_wait(
-        vim.fs.dirname(position.path)
-      )
-      if env then
-        args.env = vim.tbl_extend("force", env, args.env or {})
-      end
-      if envrc and not args.cwd then
-        args.cwd = vim.fs.dirname(envrc)
-      end
-      return args
-    end,
-  },
+  run = poly_neotest.run(),
 })
 ```
 
-The `run.augment` hook injects the direnv environment and sets `cwd` to the
-`.envrc` parent directory. The `python` function resolves the correct Python
-binary from the direnv `PATH` (needed because `jobstart` resolves executables
-from the parent process's `PATH`, not from the `env` option).
+#### Nixvim
+
+```nix
+plugins.neotest = {
+  enable = true;
+
+  settings = {
+    adapters = [
+      {__raw = ''require("neotest-python")(require("poly-direnv.neotest").python())''; }
+    ];
+    run.__raw = ''require("poly-direnv.neotest").run()'';
+  };
+};
+```
 
 ## Limitations
 
