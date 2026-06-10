@@ -280,32 +280,35 @@ before any LSP server has started for that directory).
 The `poly-direnv.neotest` module provides ready-made configuration for
 [neotest](https://github.com/nvim-neotest/neotest). It handles:
 
-- Resolving the correct Python binary from the direnv `PATH`
+- Resolving executables from the direnv `PATH` (all adapters)
 - Injecting direnv environment variables into test processes
 - Setting `cwd` to the `.envrc` parent directory
-- Forcing `pytest` as the runner (bypasses module detection that fails
-  outside the direnv environment)
+- Python-specific: correct interpreter resolution and forced pytest runner
+
+Three functions are provided:
+
+| Function | Purpose |
+|----------|---------|
+| `wrap(adapter)` | Wraps any adapter so its command is resolved from the direnv `PATH` |
+| `python(opts?)` | Returns neotest-python config with direnv-aware Python resolution |
+| `run(opts?)` | Returns `run` config with env injection and cwd override |
+
+`wrap()` is needed because `jobstart` resolves executables from the parent
+process's `PATH`, not from the `env` option. Without it, bare commands like
+`go`, `cargo`, or `zig` resolve to whichever version Neovim sees, ignoring the
+direnv environment.
 
 ```lua
 local poly_neotest = require("poly-direnv.neotest")
 
 require("neotest").setup({
   adapters = {
-    require("neotest-python")(poly_neotest.python()),
-  },
-  run = poly_neotest.run(),
-})
-```
-
-Both `python()` and `run()` accept an optional table to merge additional
-settings:
-
-```lua
-require("neotest").setup({
-  adapters = {
-    require("neotest-python")(poly_neotest.python({
+    poly_neotest.wrap(require("neotest-golang")({ dap_go_enabled = true })),
+    poly_neotest.wrap(require("neotest-python")(poly_neotest.python({
       dap = { justMyCode = false },
-    })),
+    }))),
+    poly_neotest.wrap(require("neotest-zig")),
+    poly_neotest.wrap(require("rustaceanvim.neotest")),
   },
   run = poly_neotest.run(),
 })
@@ -317,9 +320,14 @@ require("neotest").setup({
 plugins.neotest = {
   enable = true;
 
-  settings = {
+  settings = let
+    wrap = name: ''require("poly-direnv.neotest").wrap(${name})'';
+  in {
     adapters = [
-      {__raw = ''require("neotest-python")(require("poly-direnv.neotest").python())''; }
+      {__raw = wrap ''require("neotest-golang")({ dap_go_enabled = true })'';}
+      {__raw = wrap ''require("neotest-python")(require("poly-direnv.neotest").python())''; }
+      {__raw = wrap ''require("neotest-zig")'';}
+      {__raw = wrap ''require("rustaceanvim.neotest")'';}
     ];
     run.__raw = ''require("poly-direnv.neotest").run()'';
   };

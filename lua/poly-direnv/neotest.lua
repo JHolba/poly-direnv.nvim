@@ -2,16 +2,21 @@
 ---
 --- Provides ready-made configuration for neotest that injects direnv
 --- environments into test processes. Handles:
----   - Resolving the correct Python binary from the direnv PATH
+---   - Resolving executables from the direnv PATH (generic, all adapters)
 ---   - Injecting direnv environment variables into test processes
 ---   - Setting cwd to the .envrc parent directory
+---   - Python-specific: correct interpreter resolution and forced pytest runner
 ---
 --- Usage:
+---   local poly_neotest = require("poly-direnv.neotest")
+---
 ---   require("neotest").setup({
 ---     adapters = {
----       require("neotest-python")(require("poly-direnv.neotest").python()),
+---       poly_neotest.wrap(require("neotest-golang")({ ... })),
+---       poly_neotest.wrap(require("neotest-python")(poly_neotest.python())),
+---       poly_neotest.wrap(require("neotest-zig")),
 ---     },
----     run = require("poly-direnv.neotest").run(),
+---     run = poly_neotest.run(),
 ---   })
 
 local poly = require("poly-direnv")
@@ -32,27 +37,99 @@ local function find_in_path(path_str, name)
   return nil
 end
 
---- Return neotest-python adapter config with direnv-aware Python resolution.
+--- Resolve a command's executable from the direnv PATH.
 ---
---- Merges with any additional settings you pass in. Provides:
----   - `python`: function that resolves python3 from the direnv PATH
----   - `runner`: "pytest" (bypasses module detection which fails outside direnv)
+--- If the command is a bare name (not an absolute path), look it up in
+--- the direnv PATH for the given directory. Returns the resolved absolute
+--- path, or the original command if no direnv env is available.
+---
+--- @param cmd string The executable name or path
+--- @param dir string Directory to resolve the direnv env from
+--- @return string The resolved executable path
+local function resolve_cmd(cmd, dir)
+  -- Already an absolute path; don't re-resolve
+  if cmd:sub(1, 1) == "/" then
+    return cmd
+  end
+
+  local _, env = poly.get_env_wait(dir)
+  if env and env.PATH then
+    return find_in_path(env.PATH, cmd) or cmd
+  end
+  return cmd
+end
+
+--- Wrap a neotest adapter so its build_spec resolves the command executable
+--- from the direnv PATH.
+---
+--- jobstart resolves executables from the parent process's PATH, not from
+--- the env option. This wrapper intercepts build_spec results and replaces
+--- bare command names (e.g. "go", "cargo", "zig") with absolute paths
+--- found in the direnv-scoped PATH.
+---
+--- Works with any adapter -- not language-specific.
+---
+--- @param adapter table A neotest adapter (the return value of require("neotest-xxx")(...))
+--- @return table The same adapter with a wrapped build_spec
+function M.wrap(adapter)
+  local original_build_spec = adapter.build_spec
+  if not original_build_spec then
+    return adapter
+  end
+
+  adapter.build_spec = function(args)
+    local specs = original_build_spec(args)
+    if not specs then
+      return nil
+    end
+
+    -- build_spec can return a single spec or a list of specs
+    local spec_list = specs[1] and specs or { specs }
+    local is_single = not specs[1]
+
+    for _, spec in ipairs(spec_list) do
+      if spec.command then
+        -- Determine the directory for direnv resolution
+        local position = args.tree and args.tree:data()
+        local dir = (position and position.path) and vim.fs.dirname(position.path) or nil
+
+        if dir then
+          if type(spec.command) == "table" and spec.command[1] then
+            spec.command[1] = resolve_cmd(spec.command[1], dir)
+          elseif type(spec.command) == "string" then
+            -- Some adapters use a command string; resolve the first word
+            local first, rest = spec.command:match("^(%S+)(.*)")
+            if first then
+              spec.command = resolve_cmd(first, dir) .. rest
+            end
+          end
+        end
+      end
+    end
+
+    return is_single and spec_list[1] or spec_list
+  end
+
+  return adapter
+end
+
+--- Return neotest-python adapter config for use with wrap().
+---
+--- Provides:
+---   - `python`: returns bare "python3" so wrap() resolves it from the
+---     direnv PATH (prevents neotest-python from baking a nix store path)
+---   - `runner`: "pytest" (bypasses module detection which fails outside
+---     the direnv environment)
+---
+--- Must be used with wrap() to resolve the Python binary:
+---   wrap(require("neotest-python")(poly_neotest.python()))
 ---
 --- @param opts? table Additional neotest-python settings to merge
 --- @return table config suitable for passing to require("neotest-python")(config)
 function M.python(opts)
   return vim.tbl_deep_extend("force", {
     runner = "pytest",
-    python = function(root)
-      local _, env = poly.get_env_wait(root)
-      if env and env.PATH then
-        local py = find_in_path(env.PATH, "python3") or find_in_path(env.PATH, "python")
-        if py then
-          return py
-        end
-      end
-      return "python3"
-    end,
+    python = "python3",
   }, opts or {})
 end
 

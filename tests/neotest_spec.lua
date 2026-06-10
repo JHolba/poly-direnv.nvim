@@ -33,24 +33,16 @@ describe("neotest", function()
   end)
 
   describe("python", function()
-    before_each(function()
-      mock = helpers.mock_vim_system()
-    end)
-
-    after_each(function()
-      mock.restore()
-    end)
-
     it("returns a table with runner and python fields", function()
       local config = neotest_helper.python()
       assert.equals("pytest", config.runner)
-      assert.is_function(config.python)
+      assert.equals("python3", config.python)
     end)
 
     it("merges user opts", function()
       local config = neotest_helper.python({ dap = { justMyCode = false } })
       assert.equals("pytest", config.runner)
-      assert.is_function(config.python)
+      assert.equals("python3", config.python)
       assert.is_not_nil(config.dap)
       assert.is_false(config.dap.justMyCode)
     end)
@@ -60,46 +52,9 @@ describe("neotest", function()
       assert.equals("unittest", config.runner)
     end)
 
-    it("python function resolves from cached direnv PATH", function()
-      -- Create a temp directory with a fake python3
-      local tmpdir = vim.fn.tempname()
-      vim.fn.mkdir(tmpdir .. "/bin", "p")
-      local py_path = tmpdir .. "/bin/python3"
-      local f = io.open(py_path, "w")
-      f:write("#!/bin/sh\n")
-      f:close()
-
-      cache.set_resolve("/project", "/project/.envrc", 0)
-      cache.set_env("/project/.envrc", { PATH = tmpdir .. "/bin:/usr/bin" })
-
-      local config = neotest_helper.python()
-      local result = config.python("/project")
-
-      assert.equals(py_path, result)
-
-      -- Cleanup
-      os.remove(py_path)
-      os.remove(tmpdir .. "/bin")
-      os.remove(tmpdir)
-    end)
-
-    it("python function falls back to 'python3' when no direnv env", function()
-      mock.returns(resolve_response(nil, nil))
-
-      local config = neotest_helper.python()
-      local result = config.python("/no-envrc")
-
-      assert.equals("python3", result)
-    end)
-
-    it("python function falls back to 'python3' when PATH has no python", function()
-      cache.set_resolve("/project", "/project/.envrc", 0)
-      cache.set_env("/project/.envrc", { PATH = "/nonexistent/bin" })
-
-      local config = neotest_helper.python()
-      local result = config.python("/project")
-
-      assert.equals("python3", result)
+    it("user opts can override python", function()
+      local config = neotest_helper.python({ python = "/custom/python3" })
+      assert.equals("/custom/python3", config.python)
     end)
   end)
 
@@ -203,6 +158,216 @@ describe("neotest", function()
 
       assert.is_nil(result.env)
       assert.is_nil(result.cwd)
+    end)
+  end)
+
+  describe("wrap", function()
+    before_each(function()
+      mock = helpers.mock_vim_system()
+    end)
+
+    after_each(function()
+      mock.restore()
+    end)
+
+    it("resolves bare command from direnv PATH (table command)", function()
+      -- Create a temp directory with a fake executable
+      local tmpdir = vim.fn.tempname()
+      vim.fn.mkdir(tmpdir .. "/bin", "p")
+      local go_path = tmpdir .. "/bin/go"
+      local f = io.open(go_path, "w")
+      f:write("#!/bin/sh\n")
+      f:close()
+
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { PATH = tmpdir .. "/bin:/usr/bin" })
+
+      local adapter = {
+        build_spec = function()
+          return {
+            command = { "go", "test", "-json", "./..." },
+          }
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      local spec = wrapped.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/main_test.go" }
+          end,
+        },
+      })
+
+      assert.equals(go_path, spec.command[1])
+      assert.equals("test", spec.command[2])
+
+      os.remove(go_path)
+      os.remove(tmpdir .. "/bin")
+      os.remove(tmpdir)
+    end)
+
+    it("resolves bare command from direnv PATH (string command)", function()
+      local tmpdir = vim.fn.tempname()
+      vim.fn.mkdir(tmpdir .. "/bin", "p")
+      local ctest_path = tmpdir .. "/bin/ctest"
+      local f = io.open(ctest_path, "w")
+      f:write("#!/bin/sh\n")
+      f:close()
+
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { PATH = tmpdir .. "/bin:/usr/bin" })
+
+      local adapter = {
+        build_spec = function()
+          return {
+            command = "ctest --test-dir build --quiet",
+          }
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      local spec = wrapped.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/test_main.cpp" }
+          end,
+        },
+      })
+
+      assert.equals(ctest_path .. " --test-dir build --quiet", spec.command)
+
+      os.remove(ctest_path)
+      os.remove(tmpdir .. "/bin")
+      os.remove(tmpdir)
+    end)
+
+    it("leaves absolute paths unchanged", function()
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { PATH = "/some/bin" })
+
+      local adapter = {
+        build_spec = function()
+          return {
+            command = { "/usr/bin/go", "test" },
+          }
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      local spec = wrapped.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/main_test.go" }
+          end,
+        },
+      })
+
+      assert.equals("/usr/bin/go", spec.command[1])
+    end)
+
+    it("falls back to original command when not found in direnv PATH", function()
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { PATH = "/nonexistent/bin" })
+
+      local adapter = {
+        build_spec = function()
+          return {
+            command = { "cargo", "test" },
+          }
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      local spec = wrapped.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/lib.rs" }
+          end,
+        },
+      })
+
+      assert.equals("cargo", spec.command[1])
+    end)
+
+    it("passes through when build_spec returns nil", function()
+      local adapter = {
+        build_spec = function()
+          return nil
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      local spec = wrapped.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/test.go" }
+          end,
+        },
+      })
+
+      assert.is_nil(spec)
+    end)
+
+    it("handles multiple specs", function()
+      local tmpdir = vim.fn.tempname()
+      vim.fn.mkdir(tmpdir .. "/bin", "p")
+      local go_path = tmpdir .. "/bin/go"
+      local f = io.open(go_path, "w")
+      f:write("#!/bin/sh\n")
+      f:close()
+
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { PATH = tmpdir .. "/bin:/usr/bin" })
+
+      local adapter = {
+        build_spec = function()
+          return {
+            { command = { "go", "test", "./pkg1" } },
+            { command = { "go", "test", "./pkg2" } },
+          }
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      local specs = wrapped.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/main_test.go" }
+          end,
+        },
+      })
+
+      assert.equals(2, #specs)
+      assert.equals(go_path, specs[1].command[1])
+      assert.equals(go_path, specs[2].command[1])
+
+      os.remove(go_path)
+      os.remove(tmpdir .. "/bin")
+      os.remove(tmpdir)
+    end)
+
+    it("preserves all other adapter fields", function()
+      local adapter = {
+        name = "test-adapter",
+        root = function()
+          return "/project"
+        end,
+        build_spec = function()
+          return { command = { "go", "test" } }
+        end,
+      }
+
+      local wrapped = neotest_helper.wrap(adapter)
+      assert.equals("test-adapter", wrapped.name)
+      assert.is_function(wrapped.root)
+    end)
+
+    it("returns adapter unchanged when no build_spec", function()
+      local adapter = { name = "no-build-spec" }
+      local wrapped = neotest_helper.wrap(adapter)
+      assert.equals("no-build-spec", wrapped.name)
+      assert.is_nil(wrapped.build_spec)
     end)
   end)
 end)
