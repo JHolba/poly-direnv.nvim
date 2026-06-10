@@ -8,6 +8,10 @@
 --- Works by wrapping vim.lsp.start() to inject cmd_env and override the
 --- reuse_client predicate before the server process is spawned.
 ---
+--- Also exposes get_env() and get_env_sync() for non-LSP consumers (e.g.
+--- neotest, overseer, toggleterm) that need direnv environments for external
+--- processes.
+---
 --- Requires Neovim >= 0.12.
 
 local cache = require("poly-direnv.cache")
@@ -153,6 +157,100 @@ local function complete_lsp_start(config, opts, bufnr, envrc_path, env)
   original_lsp_start(config, opts)
 end
 
+--- Resolve the direnv environment for a directory (async).
+---
+--- Runs the full resolve -> check allowed -> export pipeline, using the
+--- two-level cache when possible. Calls back with (envrc_path, env) when done.
+---
+--- This is the generic building block for any integration that needs the
+--- direnv environment for a directory. The LSP wrapper uses it internally,
+--- but it can also be used by external consumers like neotest, overseer, etc.
+---
+--- @param dir string Absolute directory path to resolve from
+--- @param callback fun(envrc_path: string?, env: table<string, string?>?) Called with results.
+---   envrc_path is nil if no allowed .envrc was found.
+---   env is nil when no .envrc applies (or it is not allowed / export failed).
+function M.get_env(dir, callback)
+  --- Export the environment for an already-resolved envrc (async).
+  --- @param envrc_path string
+  local function do_export(envrc_path)
+    -- Check env cache first
+    local cached_env = cache.get_env(envrc_path)
+    if cached_env then
+      callback(envrc_path, cached_env)
+      return
+    end
+
+    direnv.export(envrc_path, function(env)
+      if not env then
+        callback(envrc_path, nil)
+        return
+      end
+
+      cache.set_env(envrc_path, env)
+      callback(envrc_path, env)
+    end)
+  end
+
+  -- Check resolve cache first (synchronous fast path)
+  local cached_resolve = cache.get_resolve(dir)
+  if cached_resolve then
+    local envrc_path = cached_resolve.envrc_path
+    if not envrc_path or cached_resolve.allowed ~= 0 then
+      callback(nil, nil)
+      return
+    end
+    do_export(envrc_path)
+    return
+  end
+
+  -- Full cache miss; need async resolve + export
+  direnv.resolve(dir, function(envrc_path, allowed)
+    cache.set_resolve(dir, envrc_path, allowed)
+
+    if not envrc_path then
+      callback(nil, nil)
+      return
+    end
+
+    if allowed ~= 0 then
+      callback(nil, nil)
+      return
+    end
+
+    do_export(envrc_path)
+  end)
+end
+
+--- Synchronously get the cached direnv environment for a directory.
+---
+--- Returns immediately from the cache without spawning any subprocesses.
+--- Returns nil on cache miss. This is useful in synchronous hooks (e.g.
+--- neotest's run.augment) where the cache is expected to already be warm
+--- from the LSP integration or a prior get_env() call.
+---
+--- @param dir string Absolute directory path
+--- @return string? envrc_path The .envrc path, or nil on cache miss / no envrc
+--- @return table<string, string?>? env The environment table, or nil on cache miss / no envrc
+function M.get_env_sync(dir)
+  local cached_resolve = cache.get_resolve(dir)
+  if not cached_resolve then
+    return nil, nil
+  end
+
+  local envrc_path = cached_resolve.envrc_path
+  if not envrc_path or cached_resolve.allowed ~= 0 then
+    return nil, nil
+  end
+
+  local cached_env = cache.get_env(envrc_path)
+  if not cached_env then
+    return nil, nil
+  end
+
+  return envrc_path, cached_env
+end
+
 --- Resolve the environment for a directory and then start the LSP.
 --- This is the async path taken on cache miss.
 --- @param config vim.lsp.ClientConfig
@@ -160,48 +258,28 @@ end
 --- @param bufnr integer
 --- @param dir string
 local function resolve_and_start(config, opts, bufnr, dir)
-  direnv.resolve(dir, function(envrc_path, allowed)
-    -- Cache the resolve result
-    cache.set_resolve(dir, envrc_path, allowed)
-
-    if not envrc_path then
-      -- No .envrc found; start with default env
-      complete_lsp_start(config, opts, bufnr, nil, nil)
-      return
-    end
-
-    if allowed ~= 0 then
-      -- Not allowed
-      local status_text = allowed == 1 and "pending approval" or "denied"
-      notify(
-        envrc_path .. " is " .. status_text .. ". LSP starting with default env. Run :PolyDirenvAllow to allow.",
-        vim.log.levels.WARN
-      )
-      complete_lsp_start(config, opts, bufnr, nil, nil)
-      return
-    end
-
-    -- Check env cache
-    local cached_env = cache.get_env(envrc_path)
-    if cached_env then
-      if M.config.notifications.on_load then
-        notify("Using cached env from " .. envrc_path, vim.log.levels.DEBUG)
+  M.get_env(dir, function(envrc_path, env)
+    if not envrc_path and not env then
+      -- Check if we should warn about unapproved envrc
+      local cached_resolve = cache.get_resolve(dir)
+      if cached_resolve and cached_resolve.envrc_path and cached_resolve.allowed ~= 0 then
+        local status_text = cached_resolve.allowed == 1 and "pending approval" or "denied"
+        notify(
+          cached_resolve.envrc_path
+            .. " is "
+            .. status_text
+            .. ". LSP starting with default env. Run :PolyDirenvAllow to allow.",
+          vim.log.levels.WARN
+        )
       end
-      complete_lsp_start(config, opts, bufnr, envrc_path, cached_env)
-      return
     end
 
-    -- Export the environment (async)
-    direnv.export(envrc_path, function(env)
-      if not env then
-        notify("Failed to export env from " .. envrc_path .. ". Starting with default env.", vim.log.levels.WARN)
-        complete_lsp_start(config, opts, bufnr, nil, nil)
-        return
-      end
+    if envrc_path and not env then
+      notify("Failed to export env from " .. envrc_path .. ". Starting with default env.", vim.log.levels.WARN)
+      envrc_path = nil
+    end
 
-      cache.set_env(envrc_path, env)
-      complete_lsp_start(config, opts, bufnr, envrc_path, env)
-    end)
+    complete_lsp_start(config, opts, bufnr, envrc_path, env)
   end)
 end
 

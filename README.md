@@ -233,6 +233,64 @@ internal `FileType` autocmd triggers an LSP start for a buffer:
 
 On cache hit, steps 3-4 are skipped and the start is synchronous.
 
+## Public API
+
+The plugin exposes two functions for retrieving the direnv environment for any
+directory. These are useful for integrating with tools that spawn external
+processes outside of LSP (e.g. test runners, task runners, REPLs).
+
+### `get_env(dir, callback)`
+
+Asynchronously resolve the direnv environment for a directory. Runs the full
+resolve + export pipeline, using the cache when possible.
+
+```lua
+require("poly-direnv").get_env("/path/to/project", function(envrc_path, env)
+  -- envrc_path: string? -- the .envrc that applies, or nil
+  -- env: table<string, string>? -- environment variables, or nil
+end)
+```
+
+### `get_env_sync(dir)`
+
+Synchronously return the cached direnv environment for a directory. Returns
+`nil, nil` on cache miss (never spawns subprocesses). The cache is typically
+warm from the LSP integration by the time you need it.
+
+```lua
+local envrc_path, env = require("poly-direnv").get_env_sync("/path/to/project")
+```
+
+### Example: neotest
+
+[neotest](https://github.com/nvim-neotest/neotest) provides a `run.augment`
+hook that fires before every test run. Use `get_env_sync` to inject the direnv
+environment into test processes:
+
+```lua
+require("neotest").setup({
+  run = {
+    augment = function(tree, args)
+      local buf = vim.api.nvim_get_current_buf()
+      local fname = vim.api.nvim_buf_get_name(buf)
+      if fname == "" then
+        return args
+      end
+
+      local _, env = require("poly-direnv").get_env_sync(vim.fs.dirname(fname))
+      if env then
+        args.env = vim.tbl_extend("force", env, args.env or {})
+      end
+      return args
+    end,
+  },
+  -- ... adapters, etc.
+})
+```
+
+The cache will already be warm from the LSP integration (which resolved the
+environment when the buffer was opened), so `get_env_sync` returns instantly.
+
 ## Limitations
 
 - **Process-level environments only.** Each LSP server process gets its env at
