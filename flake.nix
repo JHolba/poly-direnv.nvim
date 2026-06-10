@@ -32,7 +32,7 @@
     });
 
     checks = forAllSystems (pkgs: {
-      formatting = treefmtEval.${pkgs.system}.config.build.check self;
+      formatting = treefmtEval.${pkgs.stdenv.hostPlatform.system}.config.build.check self;
       lua-lint = pkgs.runCommand "check-lua-lint" {} ''
         cd ${self} && ${pkgs.selene}/bin/selene --allow-warnings lua/
         touch $out
@@ -45,6 +45,21 @@
         ${pkgs.deadnix}/bin/deadnix --fail ${self}
         touch $out
       '';
+      tests = let
+        busted = pkgs.luajitPackages.busted;
+        luaEnv = pkgs.luajit.withPackages (_: [busted]);
+      in
+        pkgs.runCommand "check-tests" {
+          nativeBuildInputs = [pkgs.neovim-unwrapped pkgs.direnv];
+          LUA_PATH = "${luaEnv}/share/lua/5.1/?.lua;${luaEnv}/share/lua/5.1/?/init.lua;;";
+          LUA_CPATH = "${luaEnv}/lib/lua/5.1/?.so;;";
+        } ''
+          # vim.lsp.log needs a writable HOME for its log directory
+          export HOME=$(mktemp -d)
+          cd ${self}
+          nvim --headless --clean -l tests/run.lua tests/ --output utfTerminal
+          touch $out
+        '';
     });
 
     devShells = forAllSystems (pkgs: {
@@ -55,11 +70,12 @@
           alejandra
           statix
           deadnix
+          luajitPackages.busted
         ];
       };
     });
 
-    formatter = forAllSystems (pkgs: treefmtEval.${pkgs.system}.config.build.wrapper);
+    formatter = forAllSystems (pkgs: treefmtEval.${pkgs.stdenv.hostPlatform.system}.config.build.wrapper);
 
     overlays.default = final: _: {
       vimPlugins =
@@ -73,6 +89,6 @@
         };
     };
 
-    nixvimModule = import ./nix/nixvim.nix;
+    nixosModules.nixvim = import ./nix/nixvim.nix;
   };
 }
