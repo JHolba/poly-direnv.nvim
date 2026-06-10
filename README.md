@@ -261,35 +261,72 @@ warm from the LSP integration by the time you need it.
 local envrc_path, env = require("poly-direnv").get_env_sync("/path/to/project")
 ```
 
+### `get_env_wait(dir, timeout?)`
+
+Synchronously resolve the direnv environment for a directory, blocking until
+the result is available. Tries the cache first; on miss, runs the full async
+pipeline and blocks with `vim.wait()`. The optional `timeout` defaults to
+5000ms.
+
+```lua
+local envrc_path, env = require("poly-direnv").get_env_wait("/path/to/project")
+```
+
+Use this when the cache may not be warm (e.g. when a test runner triggers
+before any LSP server has started for that directory).
+
 ### Example: neotest
 
 [neotest](https://github.com/nvim-neotest/neotest) provides a `run.augment`
-hook that fires before every test run. Use `get_env_sync` to inject the direnv
+hook that fires before every test run. Use `get_env_wait` to inject the direnv
 environment into test processes:
 
 ```lua
 require("neotest").setup({
+  adapters = {
+    require("neotest-python")({
+      -- Resolve python from the direnv PATH so the correct
+      -- interpreter (with project dependencies) is used.
+      python = function(root)
+        local envrc, env = require("poly-direnv").get_env_wait(root)
+        if env and env.PATH then
+          for dir in env.PATH:gmatch("[^:]+") do
+            local py = dir .. "/python3"
+            if vim.uv.fs_stat(py) then
+              return py
+            end
+          end
+        end
+        return "python3"
+      end,
+    }),
+  },
   run = {
     augment = function(tree, args)
-      local buf = vim.api.nvim_get_current_buf()
-      local fname = vim.api.nvim_buf_get_name(buf)
-      if fname == "" then
+      local position = tree:data()
+      if not position or not position.path then
         return args
       end
 
-      local _, env = require("poly-direnv").get_env_sync(vim.fs.dirname(fname))
+      local envrc, env = require("poly-direnv").get_env_wait(
+        vim.fs.dirname(position.path)
+      )
       if env then
         args.env = vim.tbl_extend("force", env, args.env or {})
+      end
+      if envrc and not args.cwd then
+        args.cwd = vim.fs.dirname(envrc)
       end
       return args
     end,
   },
-  -- ... adapters, etc.
 })
 ```
 
-The cache will already be warm from the LSP integration (which resolved the
-environment when the buffer was opened), so `get_env_sync` returns instantly.
+The `run.augment` hook injects the direnv environment and sets `cwd` to the
+`.envrc` parent directory. The `python` function resolves the correct Python
+binary from the direnv `PATH` (needed because `jobstart` resolves executables
+from the parent process's `PATH`, not from the `env` option).
 
 ## Limitations
 

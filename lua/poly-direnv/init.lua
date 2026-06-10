@@ -251,6 +251,42 @@ function M.get_env_sync(dir)
   return envrc_path, cached_env
 end
 
+--- Synchronously resolve the direnv environment for a directory, blocking
+--- until the result is available.
+---
+--- Tries the cache first (fast path). On cache miss, runs the full async
+--- resolve + export pipeline and blocks with vim.wait() until it completes.
+--- This is useful in contexts where you need the environment immediately
+--- and can tolerate a brief blocking delay (~100-200ms on first call).
+---
+--- @param dir string Absolute directory path
+--- @param timeout? integer Timeout in milliseconds (default 5000)
+--- @return string? envrc_path The .envrc path, or nil on timeout / no envrc
+--- @return table<string, string?>? env The environment table, or nil on timeout / no envrc
+function M.get_env_wait(dir, timeout)
+  -- Fast path: cache hit
+  local envrc_path, env = M.get_env_sync(dir)
+  if envrc_path then
+    return envrc_path, env
+  end
+
+  -- Slow path: async resolve + export, then block
+  local done = false
+  local result_envrc, result_env
+
+  M.get_env(dir, function(envrc, e)
+    result_envrc = envrc
+    result_env = e
+    done = true
+  end)
+
+  vim.wait(timeout or 5000, function()
+    return done
+  end)
+
+  return result_envrc, result_env
+end
+
 --- Resolve the environment for a directory and then start the LSP.
 --- This is the async path taken on cache miss.
 --- @param config vim.lsp.ClientConfig

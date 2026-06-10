@@ -88,6 +88,63 @@ describe("init", function()
     end)
   end)
 
+  describe("get_env_wait", function()
+    before_each(function()
+      mock = helpers.mock_vim_system()
+    end)
+
+    after_each(function()
+      mock.restore()
+    end)
+
+    it("returns cached values immediately without calling vim.system", function()
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { FOO = "bar" })
+
+      local envrc, env = poly.get_env_wait("/project/src")
+      assert.equals("/project/.envrc", envrc)
+      assert.equals("bar", env.FOO)
+      assert.equals(0, #mock.calls)
+    end)
+
+    it("blocks and resolves on cache miss", function()
+      mock.returns(resolve_response("/project/.envrc", 0))
+      mock.returns(export_response({ PATH = "/nix/bin" }))
+
+      local envrc, env = poly.get_env_wait("/project/src")
+      assert.equals("/project/.envrc", envrc)
+      assert.is_not_nil(env)
+      assert.equals("/nix/bin", env.PATH)
+    end)
+
+    it("returns nil when no envrc is found", function()
+      mock.returns(resolve_response(nil, nil))
+
+      local envrc, env = poly.get_env_wait("/no-envrc/src")
+      assert.is_nil(envrc)
+      assert.is_nil(env)
+    end)
+
+    it("returns nil when envrc is not allowed", function()
+      mock.returns(resolve_response("/project/.envrc", 1))
+
+      local envrc, env = poly.get_env_wait("/project/src")
+      assert.is_nil(envrc)
+      assert.is_nil(env)
+    end)
+
+    it("populates cache for subsequent get_env_sync calls", function()
+      mock.returns(resolve_response("/project/.envrc", 0))
+      mock.returns(export_response({ FOO = "cached" }))
+
+      poly.get_env_wait("/project/src")
+
+      local envrc, env = poly.get_env_sync("/project/src")
+      assert.equals("/project/.envrc", envrc)
+      assert.equals("cached", env.FOO)
+    end)
+  end)
+
   describe("get_env", function()
     before_each(function()
       mock = helpers.mock_vim_system()
