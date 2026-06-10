@@ -14,7 +14,7 @@
     nixpkgs,
     treefmt-nix,
   }: let
-    systems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
+    systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
     forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     treefmtEval = forAllSystems (pkgs:
       treefmt-nix.lib.evalModule pkgs {
