@@ -89,6 +89,8 @@
         };
     };
 
-    nixosModules.nixvim = import ./nix/nixvim.nix;
+    # Nixvim module — import inside programs.nixvim:
+    #   programs.nixvim.imports = [ inputs.poly-direnv.nixvimModules.default ];
+    nixvimModules.default = import ./nix/nixvim.nix;
   };
 }

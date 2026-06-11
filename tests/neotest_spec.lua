@@ -370,4 +370,84 @@ describe("neotest", function()
       assert.is_nil(wrapped.build_spec)
     end)
   end)
+
+  describe("wrap_all", function()
+    before_each(function()
+      mock = helpers.mock_vim_system()
+    end)
+
+    after_each(function()
+      mock.restore()
+      -- Clean up neotest.config from package.loaded
+      package.loaded["neotest.config"] = nil
+    end)
+
+    it("wraps all adapters registered in neotest.config", function()
+      local tmpdir = vim.fn.tempname()
+      vim.fn.mkdir(tmpdir .. "/bin", "p")
+      local go_path = tmpdir .. "/bin/go"
+      local f = io.open(go_path, "w")
+      f:write("#!/bin/sh\n")
+      f:close()
+
+      cache.set_resolve("/project/src", "/project/.envrc", 0)
+      cache.set_env("/project/.envrc", { PATH = tmpdir .. "/bin:/usr/bin" })
+
+      -- Simulate neotest.config with adapters
+      local adapter1 = {
+        name = "neotest-go",
+        build_spec = function()
+          return { command = { "go", "test", "./..." } }
+        end,
+      }
+      local adapter2 = {
+        name = "neotest-custom",
+        build_spec = function()
+          return { command = { "cargo", "test" } }
+        end,
+      }
+
+      -- Mock neotest.config module
+      package.loaded["neotest.config"] = setmetatable({}, {
+        __index = function(_, key)
+          if key == "adapters" then
+            return { adapter1, adapter2 }
+          end
+        end,
+      })
+
+      neotest_helper.wrap_all()
+
+      -- Verify adapter1 was wrapped (go should resolve)
+      local spec1 = adapter1.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/main_test.go" }
+          end,
+        },
+      })
+      assert.equals(go_path, spec1.command[1])
+
+      -- Verify adapter2 was also wrapped (cargo won't resolve but that's fine)
+      local spec2 = adapter2.build_spec({
+        tree = {
+          data = function()
+            return { path = "/project/src/lib.rs" }
+          end,
+        },
+      })
+      -- cargo not in tmpdir/bin, so stays as bare "cargo"
+      assert.equals("cargo", spec2.command[1])
+
+      os.remove(go_path)
+      os.remove(tmpdir .. "/bin")
+      os.remove(tmpdir)
+    end)
+
+    it("handles missing neotest.config gracefully", function()
+      package.loaded["neotest.config"] = nil
+      -- Should not error
+      neotest_helper.wrap_all()
+    end)
+  end)
 end)

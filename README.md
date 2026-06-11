@@ -58,36 +58,25 @@ Add the plugin as a flake input:
 
 ```nix
 # flake.nix
-inputs.poly-direnv = {
-  url = "github:your-user/poly-direnv.nvim";
-  flake = false;
-};
+inputs.poly-direnv.url = "github:your-user/poly-direnv.nvim";
 ```
 
-Then in your nixvim plugin file:
+Then import the nixvim module inside `programs.nixvim`:
 
 ```nix
-{ pkgs, inputs, ... }: let
-  poly-direnv-nvim = pkgs.vimUtils.buildVimPlugin {
-    pname = "poly-direnv-nvim";
-    version = "0.1.0";
-    src = inputs.poly-direnv;
-  };
-in {
+{ pkgs, inputs, ... }: {
   programs.nixvim = {
-    extraPlugins = [ poly-direnv-nvim ];
+    imports = [ inputs.poly-direnv.nixvimModules.default ];
 
-    # Must be extraConfigLuaPre so the wrapper is in place
-    # before vim.lsp.enable() registers FileType autocmds.
-    extraConfigLuaPre = ''
-      require("poly-direnv").setup()
-    '';
+    plugins.poly-direnv = {
+      enable = true;
+      package = inputs.poly-direnv.packages.${pkgs.system}.default;
+    };
   };
 }
 ```
 
-A nixvim module is also provided at `nix/nixvim.nix` for a more declarative
-setup with typed options. See the file for usage instructions.
+All settings are optional and default to the plugin's built-in values.
 
 ### Nix (flake overlay)
 
@@ -316,23 +305,28 @@ require("neotest").setup({
 
 #### Nixvim
 
+With the nixvim module, enable `neotest` on `plugins.poly-direnv` and
+configure neotest adapters the normal way:
+
 ```nix
+plugins.poly-direnv.neotest.enable = true;
+
 plugins.neotest = {
   enable = true;
-
-  settings = let
-    wrap = name: ''require("poly-direnv.neotest").wrap(${name})'';
-  in {
-    adapters = [
-      {__raw = wrap ''require("neotest-golang")({ dap_go_enabled = true })'';}
-      {__raw = wrap ''require("neotest-python")(require("poly-direnv.neotest").python())''; }
-      {__raw = wrap ''require("neotest-zig")'';}
-      {__raw = wrap ''require("rustaceanvim.neotest")'';}
-    ];
-    run.__raw = ''require("poly-direnv.neotest").run()'';
+  adapters = {
+    python.enable = true;
+    golang = { enable = true; settings.dap_go_enabled = true; };
+    zig.enable = true;
   };
+  settings.adapters = [
+    { __raw = ''require("rustaceanvim.neotest")''; }
+  ];
 };
 ```
+
+All adapters are wrapped automatically. Python-specific settings
+(`runner = "pytest"`, `python = "python3"`) are injected via `mkDefault`
+when the python adapter is enabled.
 
 ## Limitations
 

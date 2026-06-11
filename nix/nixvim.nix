@@ -1,40 +1,34 @@
 # Nixvim module for poly-direnv.nvim
 #
-# Usage in a nixvim config:
+# Import inside programs.nixvim to get access to the full nixvim API:
 #
-#   # In your flake inputs:
-#   poly-direnv = {
-#     url = "github:<owner>/poly-direnv.nvim";
-#     flake = false;
+#   programs.nixvim = {
+#     imports = [ inputs.poly-direnv.nixvimModules.default ];
+#     plugins.poly-direnv = {
+#       enable = true;
+#       neotest.enable = true;
+#     };
 #   };
 #
-#   # In your nixvim plugin file:
-#   { pkgs, inputs, ... }:
-#   let
-#     poly-direnv-nvim = pkgs.vimUtils.buildVimPlugin {
-#       pname = "poly-direnv-nvim";
-#       version = "0.1.0";
-#       src = inputs.poly-direnv;
-#     };
-#   in {
-#     imports = [ "${inputs.poly-direnv}/nix/nixvim.nix" ];
-#     programs.nixvim.plugins.poly-direnv = {
-#       enable = true;
-#       package = poly-direnv-nvim;
-#       settings = {
-#         cache_ttl = 30000;
-#         autoload = true;
-#       };
-#     };
-#   }
+# Neotest adapters are configured the normal nixvim way:
+#
+#   plugins.neotest = {
+#     enable = true;
+#     adapters.python.enable = true;
+#     adapters.golang.enable = true;
+#     settings.adapters = [
+#       { __raw = ''require("rustaceanvim.neotest")''; }
+#     ];
+#   };
 {
   lib,
   config,
   ...
 }: let
-  cfg = config.programs.nixvim.plugins.poly-direnv;
+  cfg = config.plugins.poly-direnv;
+  neotestPythonEnabled = config.plugins.neotest.adapters.python.enable or false;
 in {
-  options.programs.nixvim.plugins.poly-direnv = {
+  options.plugins.poly-direnv = {
     enable = lib.mkEnableOption "poly-direnv.nvim -- per-directory direnv environments for LSP servers";
 
     package = lib.mkOption {
@@ -42,66 +36,62 @@ in {
       description = "The poly-direnv.nvim plugin package.";
     };
 
-    settings = lib.mkOption {
-      type = lib.types.submodule {
-        options = {
-          cache_ttl = lib.mkOption {
-            type = lib.types.int;
-            default = 30000;
-            description = "Cache TTL in milliseconds for direnv export results.";
-          };
+    settings = lib.nixvim.mkSettingsOption {
+      description = "Options provided to the `require('poly-direnv').setup()` function.";
+      options = {
+        cache_ttl =
+          lib.nixvim.defaultNullOpts.mkUnsignedInt null
+          "Cache TTL in milliseconds for direnv export results. Plugin default: 30000.";
 
-          bin = lib.mkOption {
-            type = lib.types.str;
-            default = "direnv";
-            description = "Path to the direnv binary.";
-          };
+        bin =
+          lib.nixvim.defaultNullOpts.mkStr null
+          "Path to the direnv binary. Plugin default: \"direnv\".";
 
-          autoload = lib.mkOption {
-            type = lib.types.bool;
-            default = true;
-            description = "Automatically inject direnv env on LSP start.";
-          };
+        autoload =
+          lib.nixvim.defaultNullOpts.mkBool null
+          "Automatically inject direnv env on LSP start. Plugin default: true.";
 
-          notifications = lib.mkOption {
-            type = lib.types.submodule {
-              options = {
-                on_load = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Notify when a direnv environment is loaded.";
-                };
-                on_envrc_change = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Notify when an .envrc file is saved.";
-                };
-              };
-            };
-            default = {};
-            description = "Notification settings.";
-          };
+        notifications = {
+          on_load =
+            lib.nixvim.defaultNullOpts.mkBool null
+            "Notify when a direnv environment is loaded. Plugin default: true.";
+
+          on_envrc_change =
+            lib.nixvim.defaultNullOpts.mkBool null
+            "Notify when an .envrc file is saved. Plugin default: true.";
         };
       };
-      default = {};
-      description = "Plugin settings passed to require('poly-direnv').setup().";
+    };
+
+    neotest = {
+      enable = lib.mkEnableOption "Wrap neotest adapters with poly-direnv environment injection";
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    programs.nixvim = {
+  config = lib.mkIf cfg.enable (lib.mkMerge [
+    {
       extraPlugins = [cfg.package];
 
-      extraConfigLuaPre = let
-        luaSettings = builtins.toJSON {
-          inherit (cfg.settings) cache_ttl bin autoload;
-          notifications = {
-            inherit (cfg.settings.notifications) on_load on_envrc_change;
-          };
-        };
-      in ''
-        require("poly-direnv").setup(vim.json.decode([[${luaSettings}]]))
+      # Must run before vim.lsp.enable() registers FileType autocmds.
+      extraConfigLuaPre = ''
+        require("poly-direnv").setup(${lib.nixvim.toLuaObject cfg.settings})
       '';
-    };
-  };
+    }
+
+    (lib.mkIf cfg.neotest.enable (lib.mkMerge [
+      {
+        plugins.neotest = {
+          settings.run.__raw = ''require("poly-direnv.neotest").run()'';
+          luaConfig.post = ''require("poly-direnv.neotest").wrap_all()'';
+        };
+      }
+
+      (lib.mkIf neotestPythonEnabled {
+        plugins.neotest.adapters.python.settings = {
+          runner = lib.mkDefault "pytest";
+          python = lib.mkDefault "python3";
+        };
+      })
+    ]))
+  ]);
 }

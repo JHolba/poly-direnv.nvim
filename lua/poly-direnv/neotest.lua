@@ -133,6 +133,32 @@ function M.python(opts)
   }, opts or {})
 end
 
+--- Wrap all neotest adapters that have been registered via neotest.setup().
+---
+--- Call this after neotest.setup() to retroactively wrap every adapter's
+--- build_spec with direnv command resolution. This is the easiest way to
+--- integrate — configure neotest adapters normally, then call wrap_all().
+---
+--- Note: for neotest-python, you should also configure the adapter with
+--- runner = "pytest" and python = "python3" (or use python()) to bypass
+--- module detection that fails outside the direnv environment.
+function M.wrap_all()
+  local ok, neotest_config = pcall(require, "neotest.config")
+  if not ok then
+    return
+  end
+
+  -- neotest.config delegates to user_config via __index metatable.
+  local adapters = neotest_config.adapters
+  if not adapters then
+    return
+  end
+
+  for _, adapter in ipairs(adapters) do
+    M.wrap(adapter)
+  end
+end
+
 --- Return neotest run config with direnv-aware augment hook.
 ---
 --- The augment hook:
