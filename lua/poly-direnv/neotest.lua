@@ -43,6 +43,11 @@ end
 --- the direnv PATH for the given directory. Returns the resolved absolute
 --- path, or the original command if no direnv env is available.
 ---
+--- Uses get_env_sync (cache-only) because this runs inside build_spec,
+--- which executes in a fast event context where vim.wait is forbidden.
+--- The cache is expected to be warm from run.augment's get_env_wait call
+--- which runs before build_spec.
+---
 --- @param cmd string The executable name or path
 --- @param dir string Directory to resolve the direnv env from
 --- @return string The resolved executable path
@@ -52,7 +57,7 @@ local function resolve_cmd(cmd, dir)
     return cmd
   end
 
-  local _, env = poly.get_env_wait(dir)
+  local _, env = poly.get_env_sync(dir)
   if env and env.PATH then
     return find_in_path(env.PATH, cmd) or cmd
   end
