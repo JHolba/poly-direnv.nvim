@@ -8,9 +8,9 @@
 --- Works by wrapping vim.lsp.start() to inject cmd_env and override the
 --- reuse_client predicate before the server process is spawned.
 ---
---- Also exposes get_env() and get_env_sync() for non-LSP consumers (e.g.
---- neotest, overseer, toggleterm) that need direnv environments for external
---- processes.
+--- Also exposes get_env(), get_env_sync(), and get_env_wait() for non-LSP
+--- consumers (e.g. neotest, overseer, toggleterm) that need direnv
+--- environments for external processes.
 ---
 --- Requires Neovim >= 0.12.
 
@@ -43,7 +43,9 @@ local original_lsp_start = nil
 local is_setup = false
 
 --- Sentinel value for "no envrc found" so we can cache the absence.
+--- Also used by health.lua to identify tagged-but-envrc-less clients.
 local NO_ENVRC = "__no_envrc__"
+M.NO_ENVRC = NO_ENVRC
 
 --- Set of (server_name, envrc_path) pairs we have already notified about.
 --- Prevents repeated messages when the TTL cache expires and re-resolves.
@@ -118,6 +120,20 @@ local function reuse_client_with_envrc(client, config)
   return (client.config.root_dir or "") == (config.root_dir or "")
 end
 
+--- Prepare an LSP config for direnv-aware startup.
+--- Tags the config, injects cmd_env, and sets the reuse predicate.
+--- @param config vim.lsp.ClientConfig
+--- @param opts table
+--- @param envrc_path string?
+--- @param env table<string, string?>?
+local function prepare_lsp_config(config, opts, envrc_path, env)
+  config._direnv_envrc = envrc_path or NO_ENVRC
+  if env and next(env) then
+    config.cmd_env = env
+  end
+  opts.reuse_client = reuse_client_with_envrc
+end
+
 --- Complete the deferred LSP start with the resolved environment.
 --- @param config vim.lsp.ClientConfig
 --- @param opts table
@@ -125,16 +141,7 @@ end
 --- @param envrc_path string?
 --- @param env table<string, string?>?
 local function complete_lsp_start(config, opts, bufnr, envrc_path, env)
-  -- Tag the config so reuse_client can differentiate
-  config._direnv_envrc = envrc_path or NO_ENVRC
-
-  -- Inject env if we have one
-  if env and next(env) then
-    config.cmd_env = env
-  end
-
-  -- Override reuse_client
-  opts.reuse_client = reuse_client_with_envrc
+  prepare_lsp_config(config, opts, envrc_path, env)
 
   -- Check buffer is still valid (user may have closed it while we were async)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -326,11 +333,7 @@ end
 --- @param env table<string, string?>? Environment variables to inject
 --- @return integer?
 local function sync_start(config, opts, envrc, env)
-  config._direnv_envrc = envrc or NO_ENVRC
-  if env and next(env) then
-    config.cmd_env = env
-  end
-  opts.reuse_client = reuse_client_with_envrc
+  prepare_lsp_config(config, opts, envrc, env)
   return original_lsp_start(config, opts)
 end
 

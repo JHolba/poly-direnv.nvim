@@ -107,7 +107,7 @@ function M.check()
   if #clients == 0 then
     health.info("No active LSP clients")
   else
-    local NO_ENVRC = "__no_envrc__"
+    local NO_ENVRC = require("poly-direnv").NO_ENVRC
     local with_envrc = 0
     local without_envrc = 0
 

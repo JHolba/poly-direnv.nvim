@@ -84,8 +84,8 @@ function M.wrap(adapter)
     end
 
     -- build_spec can return a single spec or a list of specs
-    local spec_list = specs[1] and specs or { specs }
-    local is_single = not specs[1]
+    local is_list = vim.islist(specs)
+    local spec_list = is_list and specs or { specs }
 
     for _, spec in ipairs(spec_list) do
       if spec.command then
@@ -107,7 +107,7 @@ function M.wrap(adapter)
       end
     end
 
-    return is_single and spec_list[1] or spec_list
+    return is_list and spec_list or spec_list[1]
   end
 
   return adapter
@@ -123,6 +123,9 @@ end
 ---
 --- Must be used with wrap() to resolve the Python binary:
 ---   wrap(require("neotest-python")(poly_neotest.python()))
+---
+--- Note: nixvim users do not need to call this function. The nixvim module
+--- auto-injects these settings when neotest.enable is set.
 ---
 --- @param opts? table Additional neotest-python settings to merge
 --- @return table config suitable for passing to require("neotest-python")(config)
