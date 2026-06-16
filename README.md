@@ -1,33 +1,36 @@
 # poly-direnv.nvim
 
-Neovim plugin that gives each LSP server the correct
-[direnv](https://direnv.net/) environment based on which `.envrc` scope the
-file belongs to.
+**Per-directory [direnv](https://direnv.net/) environments for Neovim LSP and
+[neotest](https://github.com/nvim-neotest/neotest).**
 
-In a monorepo where `packages/foo/.envrc` and `packages/bar/.envrc` provide
-different toolchains, opening files from both directories in the same Neovim
-session will spawn **separate LSP server processes** -- each with the right
-`PATH`, `PYTHONPATH`, and any other variables set by the respective `.envrc`.
+If you work in a monorepo (or any project) where different subdirectories have
+their own `.envrc` -- different Nix devShells, different virtualenvs, different
+tool versions -- this plugin makes sure each LSP server and test runner starts
+with the right environment, automatically.
 
-## Problem
+Without it, every LSP server inherits whichever environment was active when
+Neovim launched. That means your linter in `packages/foo/` might see
+`packages/bar/`'s Python, or vice versa -- and `neotest` runs tests with the
+wrong toolchain for the same reason.
 
-Neovim starts one LSP server per `(name, root_dir)` pair. Every buffer that
-shares a root shares the same server process and its environment. If two
-subdirectories have different `.envrc` files (different Nix devShells, different
-virtualenvs, different tool versions), the LSP servers all inherit whichever
-environment happened to be active first.
+With `poly-direnv.nvim`, opening files from both directories in the same Neovim
+session spawns **separate LSP server processes**, each with the correct `PATH`,
+`PYTHONPATH`, and any other variables set by the respective `.envrc`. Neotest
+adapters are wrapped so test commands resolve from the direnv-scoped `PATH`
+too. No manual switching, no restarts.
 
-## Solution
+## How it works
 
-`poly-direnv.nvim` wraps `vim.lsp.start()` to:
+The plugin wraps `vim.lsp.start()` so that whenever Neovim is about to start
+an LSP server for a buffer, it:
 
-1. Find the closest `.envrc` for the buffer's directory (`direnv status --json`).
-2. Export the environment for that `.envrc` (`direnv export json`).
-3. Set `cmd_env` on the LSP config so the server process spawns with the
-   correct environment.
-4. Override the `reuse_client` predicate so servers are keyed by
-   `(name, envrc_path)` -- two servers with the same name but different
-   `.envrc` scopes run as independent processes.
+1. Finds the closest `.envrc` for that file (`direnv status --json`).
+2. Exports the environment for that `.envrc` (`direnv export json`).
+3. Injects the environment into the LSP config (`cmd_env`) so the server
+   process spawns with the correct variables.
+4. Keys server reuse on `(name, envrc_path)` instead of `(name, root_dir)` --
+   so two servers with the same name but different `.envrc` scopes run as
+   independent processes.
 
 Results are cached. The first buffer under a new `.envrc` has a brief async
 delay (~100-200ms) while the environment is resolved. Subsequent buffers under
