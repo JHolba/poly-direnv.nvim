@@ -8,10 +8,6 @@
 --- Works by wrapping vim.lsp.start() to inject cmd_env and override the
 --- reuse_client predicate before the server process is spawned.
 ---
---- Also exposes get_env(), get_env_sync(), and get_env_wait() for non-LSP
---- consumers (e.g. neotest, overseer, toggleterm) that need direnv
---- environments for external processes.
----
 --- Requires Neovim >= 0.12.
 
 local cache = require("poly-direnv.cache")
@@ -68,11 +64,6 @@ local function buf_dir(bufnr)
 end
 
 --- Shorten a path for display by trying bases in order.
----
---- Each entry in `bases` is a literal: "cwd", "git", or "home".
---- The first base that is an ancestor of `path` wins.
---- "home"-relative paths are prefixed with "~/".
----
 --- @param path string Absolute path to shorten
 --- @param bases ("cwd"|"git"|"home")[] Bases to try, in order
 --- @param bufnr? integer Buffer number (needed for "git")
@@ -165,14 +156,6 @@ local function complete_lsp_start(config, opts, bufnr, envrc_path, env)
 end
 
 --- Resolve the direnv environment for a directory (async).
----
---- Runs the full resolve -> check allowed -> export pipeline, using the
---- two-level cache when possible. Calls back with (envrc_path, env) when done.
----
---- This is the generic building block for any integration that needs the
---- direnv environment for a directory. The LSP wrapper uses it internally,
---- but it can also be used by external consumers like neotest, overseer, etc.
----
 --- @param dir string Absolute directory path to resolve from
 --- @param callback fun(envrc_path: string?, env: table<string, string?>?) Called with results.
 ---   envrc_path is nil if no allowed .envrc was found.
@@ -348,9 +331,7 @@ local function wrapped_lsp_start(config, opts)
     return original_lsp_start(config, opts)
   end
 
-  -- Fast path for :lsp restart -- the config already carries _direnv_envrc
-  -- and cmd_env from the previous client. Pass through synchronously so the
-  -- restart code gets a client_id back instead of nil.
+  -- Fast path for :lsp restart
   if config._direnv_envrc then
     opts.reuse_client = reuse_client_with_envrc
     return original_lsp_start(config, opts)
@@ -360,7 +341,6 @@ local function wrapped_lsp_start(config, opts)
   local dir = buf_dir(bufnr)
 
   if not dir then
-    -- No file associated with buffer; pass through
     return original_lsp_start(config, opts)
   end
 
